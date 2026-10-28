@@ -21,6 +21,9 @@ pub const CURSOR_MARKER: &str = "$|$";
 pub struct Expansion {
     pub text: String,
     pub left: usize,
+    /// Whether `replace` had a `$|$`. A marker at the very end has
+    /// `left == 0` but still places the cursor before a re-typed separator.
+    pub has_marker: bool,
 }
 
 /// Why an expansion failed. Holds only config-derived variable names.
@@ -67,6 +70,7 @@ pub fn render(
         cache: HashMap::new(),
     };
     let mut text = ctx.substitute(before)?;
+    let has_marker = after.is_some();
     let left = match after {
         Some(after) => {
             let after = ctx.substitute(&after)?;
@@ -75,7 +79,11 @@ pub fn render(
         }
         None => 0,
     };
-    Ok(Expansion { text, left })
+    Ok(Expansion {
+        text,
+        left,
+        has_marker,
+    })
 }
 
 struct Ctx<'a> {
@@ -195,6 +203,8 @@ pub fn plan_keys(text: &str) -> Vec<Key> {
 
 /// The full key sequence for one hit: erase the typed trigger, type the
 /// text and the re-typed separator, then move the cursor to the marker.
+/// The separator always goes after the whole replacement, so with a marker
+/// (even one at the very end) the cursor also moves back over it.
 pub fn plan_injection(erase: usize, expansion: &Expansion, retype: Option<char>) -> Vec<Key> {
     let mut keys = vec![Key::Back; erase];
     keys.extend(plan_keys(&expansion.text));
@@ -202,7 +212,7 @@ pub fn plan_injection(erase: usize, expansion: &Expansion, retype: Option<char>)
     if let Some(sep) = retype {
         let mut buf = [0u8; 4];
         keys.extend(plan_keys(sep.encode_utf8(&mut buf)));
-        if left > 0 {
+        if expansion.has_marker {
             left += 1;
         }
     }
@@ -336,7 +346,8 @@ mod tests {
             render(&s, now(), &|| panic!("clipboard read")),
             Ok(Expansion {
                 text: "plain".into(),
-                left: 0
+                left: 0,
+                has_marker: false
             })
         );
     }
@@ -439,10 +450,62 @@ mod tests {
     }
 
     #[test]
+    fn marker_at_end_with_word_trigger_puts_cursor_before_separator() {
+        // `brb` -> "<b>$|$" typed with a space: the cursor must end at the
+        // marker (end of the replacement), before the re-typed space, just
+        // like a marker anywhere else (verifier defect 7).
+        let e = render(&snip("<b>$|$", vec![]), now(), &no_clip).unwrap();
+        assert_eq!(e.text, "<b>");
+        assert_eq!(e.left, 0);
+        assert!(e.has_marker);
+        let keys = plan_injection(4, &e, Some(' '));
+        assert_eq!(
+            &keys[4..],
+            [
+                Key::Unit('<' as u16),
+                Key::Unit('b' as u16),
+                Key::Unit('>' as u16),
+                Key::Unit(' ' as u16),
+                Key::Left
+            ]
+        );
+        // Without a separator, a marker at the end needs no Left.
+        let keys = plan_injection(2, &e, None);
+        assert_eq!(keys.last(), Some(&Key::Unit('>' as u16)));
+    }
+
+    #[test]
+    fn marker_mid_text_with_word_trigger_counts_separator() {
+        let e = render(&snip("a$|$bc", vec![]), now(), &no_clip).unwrap();
+        assert!(e.has_marker);
+        let keys = plan_injection(4, &e, Some('.'));
+        assert_eq!(
+            &keys[4..],
+            [
+                Key::Unit('a' as u16),
+                Key::Unit('b' as u16),
+                Key::Unit('c' as u16),
+                Key::Unit('.' as u16),
+                Key::Left,
+                Key::Left,
+                Key::Left
+            ]
+        );
+        // No marker: the cursor stays after the separator.
+        let e = render(&snip("abc", vec![]), now(), &no_clip).unwrap();
+        assert!(!e.has_marker);
+        assert_eq!(
+            plan_injection(4, &e, Some('.')).last(),
+            Some(&Key::Unit('.' as u16))
+        );
+    }
+
+    #[test]
     fn plan_injection_orders_erase_text_separator_and_lefts() {
         let e = Expansion {
             text: "<b></b>".into(),
             left: 4,
+            has_marker: true,
         };
         let keys = plan_injection(4, &e, Some(' '));
         assert_eq!(&keys[..4], [Key::Back; 4]);
@@ -455,6 +518,7 @@ mod tests {
         let e = Expansion {
             text: "x".into(),
             left: 0,
+            has_marker: false,
         };
         assert_eq!(
             plan_injection(2, &e, Some('\n')),
