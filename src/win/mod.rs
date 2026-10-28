@@ -5,10 +5,17 @@
 //! `RUSTFLAGS="--cfg meh_typecheck" cargo check --lib`. `tray` and `app` use
 //! `tray-icon`, a Windows-only dependency, and are `cfg(windows)` only.
 
+#[cfg(windows)]
+pub mod app;
 pub mod clipboard;
 pub mod hook;
 pub mod inject;
 pub mod single_instance;
+#[cfg(windows)]
+pub mod tray;
+pub mod ui;
+pub mod watch;
+pub mod worker;
 
 /// One translated keyboard or mouse event from the hooks. It never leaves
 /// memory and is never logged.

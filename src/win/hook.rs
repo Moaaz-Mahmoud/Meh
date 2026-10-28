@@ -7,9 +7,10 @@
 //!
 //! Buffer rules (D-08): Backspace drops one char; arrows, Home, End, PgUp,
 //! PgDn, Esc, IME keys, mouse clicks and Ctrl, Alt or Win combos reset.
-//! Ctrl+Alt held together is AltGr and is translated normally. Enter and
-//! Tab are sent as `'\n'` and `'\t'` (word separators); the worker resets
-//! the buffer after them. A dead key resets the buffer.
+//! Ctrl+Alt held together is AltGr and is translated normally. A dead key
+//! resets. Enter and Tab are sent as `'\n'` and `'\t'`: they are word
+//! separators (so `brb` + Enter expands), and the worker resets the buffer
+//! right after them.
 
 use super::inject::INJECT_TAG;
 use super::{Event, KeyInput};

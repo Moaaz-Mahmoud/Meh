@@ -2,7 +2,7 @@
 
 #[cfg(windows)]
 fn main() {
-    // TODO(plan step 6): call `meh::win::app::run()` once the Win32 layer lands.
+    meh::win::app::run();
 }
 
 #[cfg(not(windows))]

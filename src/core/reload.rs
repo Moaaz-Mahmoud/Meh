@@ -36,6 +36,49 @@ impl Outcome {
     }
 }
 
+/// A tray notification (D-07, D-12). Built from problem text, so it never
+/// holds typed text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub title: String,
+    pub body: String,
+    /// An error (the reload failed) rather than a warning (snippets skipped).
+    pub is_error: bool,
+}
+
+fn plural(n: usize, one: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {one}s")
+    }
+}
+
+/// The notification for a reload, if it needs one. The body leads with the
+/// short part, because the shell truncates long balloon text.
+pub fn notice(outcome: &Outcome, problems: &Problems) -> Option<Notice> {
+    match *outcome {
+        Outcome::KeptLastGood { kept } => {
+            let first = problems.iter().next().map(|p| p.to_string());
+            Some(Notice {
+                title: "Meh - config error".to_string(),
+                body: format!(
+                    "Still using the previous {}. {}",
+                    plural(kept, "snippet"),
+                    first.unwrap_or_default()
+                ),
+                is_error: true,
+            })
+        }
+        Outcome::Applied { skipped, .. } if skipped > 0 => Some(Notice {
+            title: format!("Meh - {} skipped", plural(skipped, "snippet")),
+            body: "See \"Show problems\u{2026}\" in the tray menu.".to_string(),
+            is_error: false,
+        }),
+        Outcome::Applied { .. } => None,
+    }
+}
+
 /// The live snippet set.
 #[derive(Debug, Default)]
 pub struct Store {
@@ -290,6 +333,45 @@ mod tests {
         assert!(!d.poll(t0 + ms(1_249)));
         assert!(d.poll(t0 + ms(1_250)));
         assert!(!d.poll(t0 + ms(1_251)));
+    }
+
+    #[test]
+    fn notice_for_bad_reload_names_file_line_and_kept_count() {
+        let mut store = Store::new();
+        let mut problems = Problems::default();
+        store.apply(good(&[":a", ":b"]), &mut problems);
+        let out = store.apply(bad("C:/m/base.yml", 7), &mut problems);
+        let n = notice(&out, &problems).expect("a failed reload notifies");
+        assert!(n.is_error);
+        assert!(
+            n.body.starts_with("Still using the previous 2 snippets."),
+            "{}",
+            n.body
+        );
+        assert!(
+            n.body.contains("base.yml") && n.body.contains("line 7"),
+            "{}",
+            n.body
+        );
+    }
+
+    #[test]
+    fn notice_for_skips_counts_and_clean_reload_is_silent() {
+        let mut store = Store::new();
+        let mut problems = Problems::default();
+        let mut loaded = good(&[":a"]).unwrap();
+        loaded.skipped.push(Skipped {
+            file: "base.yml".into(),
+            trigger: Some(":r".into()),
+            reason: SkipReason::UnsupportedKey("regex".into()),
+        });
+        let out = store.apply(Ok(loaded), &mut problems);
+        let n = notice(&out, &problems).expect("skips notify");
+        assert!(!n.is_error);
+        assert_eq!(n.title, "Meh - 1 snippet skipped");
+        let out = store.apply(good(&[":a"]), &mut problems);
+        assert_eq!(notice(&out, &problems), None);
+        assert_eq!(out.should_notify(), notice(&out, &problems).is_some());
     }
 
     #[test]

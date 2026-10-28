@@ -11,6 +11,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_norway = "0.9.42"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 dirs = "7.0.0"
+notify = "8.2.1"
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
@@ -20,7 +21,11 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_Security",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
+    "Win32_UI_Shell",
 ] }
+
+[target.'cfg(windows)'.dependencies]
+tray-icon = { version = "0.26.1", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
