@@ -59,7 +59,10 @@ fn plural(n: usize, one: &str) -> String {
 pub fn notice(outcome: &Outcome, problems: &Problems) -> Option<Notice> {
     match *outcome {
         Outcome::KeptLastGood { kept } => {
-            let first = problems.iter().next().map(|p| p.to_string());
+            let first = problems
+                .iter()
+                .find(|p| matches!(p, Problem::ConfigError { .. }))
+                .map(|p| p.to_string());
             Some(Notice {
                 title: "Meh - config error".to_string(),
                 body: format!(
@@ -353,6 +356,20 @@ mod tests {
             "{}",
             n.body
         );
+    }
+
+    #[test]
+    fn notice_names_the_config_error_not_a_standing_problem() {
+        let mut store = Store::new();
+        let mut problems = Problems::default();
+        problems.set_standing(Problem::LiveReloadUnavailable {
+            error: "watch failed".into(),
+        });
+        let out = store.apply(bad("C:/m/base.yml", 7), &mut problems);
+        let n = notice(&out, &problems).unwrap();
+        assert!(n.body.contains("line 7"), "{}", n.body);
+        assert!(!n.body.contains("watch failed"), "{}", n.body);
+        assert_eq!(problems.len(), 2, "standing problem kept");
     }
 
     #[test]

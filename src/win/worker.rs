@@ -62,6 +62,7 @@ impl Worker {
                     self.enabled = on;
                     self.matcher.reset();
                 }
+                Event::WatchFailed(error) => self.watch_failed(error),
                 Event::Quit => return,
             }
         }
@@ -87,6 +88,27 @@ impl Worker {
         };
         self.matcher = Matcher::new(self.store.snippets());
         (self.ui)(UiUpdate::Problems { tooltip, notice });
+    }
+
+    /// Lists "live reload unavailable" until meh restarts, and tells the
+    /// user once with a notification.
+    fn watch_failed(&mut self, error: String) {
+        let (tooltip, text) = {
+            let mut problems = lock(&self.problems);
+            let p = Problem::LiveReloadUnavailable { error };
+            let text = p.to_string();
+            problems.set_standing(p);
+            (problems.tooltip(), text)
+        };
+        let notice = Notice {
+            title: "Meh - live reload is off".to_string(),
+            body: text,
+            is_error: false,
+        };
+        (self.ui)(UiUpdate::Problems {
+            tooltip,
+            notice: Some(notice),
+        });
     }
 
     fn key(&mut self, k: KeyInput) {

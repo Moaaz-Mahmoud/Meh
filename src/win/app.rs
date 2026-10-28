@@ -80,10 +80,20 @@ pub fn run() {
         }
     };
 
-    // Live reload (D-10). If watching fails, the tray "Reload" still works.
-    let _watch = match_dir
+    // Live reload (D-10). If watching fails, the tray "Reload" still works,
+    // and the failure is listed under "Show problems…".
+    let _watch = match match_dir
         .as_deref()
-        .and_then(|dir| watch::start(dir, tx.clone()).ok());
+        .map(|dir| watch::start(dir, tx.clone()))
+    {
+        Some(Ok(w)) => Some(w),
+        Some(Err(e)) => {
+            let _ = tx.send(Event::WatchFailed(e.to_string()));
+            None
+        }
+        // No config folder: the load already reports that.
+        None => None,
+    };
 
     ui::message_loop(TICK_MS, || {
         while let Ok(update) = ui_rx.try_recv() {

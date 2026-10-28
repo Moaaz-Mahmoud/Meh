@@ -37,6 +37,8 @@ pub enum Event {
     Reload,
     /// Tray Enable/Disable.
     SetEnabled(bool),
+    /// The match folder could not be watched (D-10); list it as a problem.
+    WatchFailed(String),
     Quit,
 }
 

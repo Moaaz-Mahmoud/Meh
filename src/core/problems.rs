@@ -2,8 +2,8 @@
 //!
 //! Every variant is built from config- or expansion-derived values: file
 //! paths, line numbers, YAML parser messages, trigger names and variable
-//! names from the user's own config. None carries typed text or buffer
-//! contents, and there is no free-text variant.
+//! names from the user's own config, plus an OS error message for the file
+//! watcher. None carries typed text or buffer contents.
 
 use crate::core::config::{ConfigError, SkipReason, Skipped, Snippet};
 use crate::core::expand::ExpandError;
@@ -33,6 +33,10 @@ pub enum Problem {
         trigger: String,
         reason: ExpandError,
     },
+    /// The match folder could not be watched, so saving a file does not
+    /// reload (D-10); the tray "Reload snippets" still works. `error` is the
+    /// watcher's (OS) error message.
+    LiveReloadUnavailable { error: String },
 }
 
 impl Problem {
@@ -90,6 +94,12 @@ impl fmt::Display for Problem {
             Problem::ExpandFailed { trigger, reason } => {
                 write!(f, "Could not expand `{trigger}`: {reason}")
             }
+            Problem::LiveReloadUnavailable { error } => {
+                write!(
+                    f,
+                    "live reload unavailable: {error} (use \"Reload snippets\" after saving)"
+                )
+            }
         }
     }
 }
@@ -100,26 +110,38 @@ pub struct Summary {
     pub config_errors: usize,
     pub skipped: usize,
     pub expand_failed: usize,
+    pub live_reload: usize,
 }
 
 impl Summary {
     pub fn total(&self) -> usize {
-        self.config_errors + self.skipped + self.expand_failed
+        self.config_errors + self.skipped + self.expand_failed + self.live_reload
     }
 }
 
 /// The current problems. Replaced on every reload; expansion failures are
-/// added as they happen.
+/// added as they happen. Standing problems (the file watcher) are listed
+/// first and survive reloads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Problems {
+    standing: Vec<Problem>,
     items: Vec<Problem>,
 }
 
 impl Problems {
-    /// Replaces the list (a reload happened).
+    /// Replaces the list (a reload happened). Standing problems stay.
     pub fn replace(&mut self, items: Vec<Problem>) {
         self.items = items;
         self.items.truncate(MAX_PROBLEMS);
+    }
+
+    /// Adds a problem that no reload clears, unless one of the same kind is
+    /// already there.
+    pub fn set_standing(&mut self, p: Problem) {
+        let same_kind = |q: &Problem| std::mem::discriminant(q) == std::mem::discriminant(&p);
+        if !self.standing.iter().any(same_kind) {
+            self.standing.push(p);
+        }
     }
 
     /// Adds one problem unless an identical one is already listed.
@@ -143,24 +165,25 @@ impl Problems {
     }
 
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.standing.len() + self.items.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.len() == 0
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Problem> {
-        self.items.iter()
+        self.standing.iter().chain(&self.items)
     }
 
     pub fn summary(&self) -> Summary {
         let mut s = Summary::default();
-        for p in &self.items {
+        for p in self.iter() {
             match p {
                 Problem::ConfigError { .. } => s.config_errors += 1,
                 Problem::SkippedSnippet { .. } => s.skipped += 1,
                 Problem::ExpandFailed { .. } => s.expand_failed += 1,
+                Problem::LiveReloadUnavailable { .. } => s.live_reload += 1,
             }
         }
         s
@@ -180,8 +203,7 @@ impl Problems {
         if self.is_empty() {
             return "No problems.".to_string();
         }
-        self.items
-            .iter()
+        self.iter()
             .map(|p| p.to_string())
             .collect::<Vec<_>>()
             .join("\n")
@@ -263,6 +285,10 @@ mod tests {
                 Problem::ExpandFailed { trigger, reason } => {
                     let _: (&String, &ExpandError) = (trigger, reason);
                 }
+                // An OS error message from the file watcher; never typed text.
+                Problem::LiveReloadUnavailable { error } => {
+                    let _: &String = error;
+                }
             }
         }
 
@@ -312,7 +338,8 @@ mod tests {
             Summary {
                 config_errors: 1,
                 skipped: 2,
-                expand_failed: 1
+                expand_failed: 1,
+                live_reload: 0
             }
         );
         assert_eq!(p.tooltip(), "Meh - 4 problems");
@@ -324,6 +351,29 @@ mod tests {
             report.contains(":r") && report.contains("regex"),
             "{report}"
         );
+    }
+
+    #[test]
+    fn live_reload_problem_survives_reloads() {
+        let mut p = Problems::default();
+        p.set_standing(Problem::LiveReloadUnavailable {
+            error: "Access is denied. (os error 5)".into(),
+        });
+        assert_eq!(p.len(), 1);
+        assert_eq!(p.tooltip(), "Meh - 1 problem");
+        p.replace(vec![skipped(":r")]);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.summary().live_reload, 1);
+        p.replace(vec![]);
+        assert_eq!(p.len(), 1);
+        let report = p.report();
+        assert!(
+            report.starts_with("live reload unavailable: Access is denied."),
+            "{report}"
+        );
+        // Setting it again does not duplicate it.
+        p.set_standing(Problem::LiveReloadUnavailable { error: "x".into() });
+        assert_eq!(p.len(), 1);
     }
 
     #[test]
