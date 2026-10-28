@@ -87,3 +87,6 @@ Inputs: verification.md "## Re-verification after fix round 1", new defects N1-N
 Checks at 63049d1: `cargo test --locked` 105 + 2 + 4 passed. `cargo clippy --all-targets -- -D warnings` is clean, and so are the meh_typecheck `cargo check --lib` and `cargo clippy --lib -- -D warnings`. `cargo fmt --check` is clean and Cargo.lock is unchanged. Each new core test was checked by reverting its fix in place: date format tab, value tab mapping, control-char check, hit default boundary and `after_expansion`. Every one failed without its fix.
 
 Still Windows-only: the worker drain (N4) and the hook Win-key path (N6). They are type-checked here and first compiled in the next CI run. app.rs and tray.rs are unchanged.
+
+## CI dry run 3 (after fix round 2)
+- Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40735923798: **success**. All steps passed and Publish was skipped as expected. This is the Gate 4 test build.
