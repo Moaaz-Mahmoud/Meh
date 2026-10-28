@@ -115,3 +115,23 @@ Needs a human Windows test:
 - The "me only" plus elevated warning.
 - Uninstall removes the Startup shortcut.
 - Upgrading from the old per-user install in the admin account's profile: it stays installed side by side under its own HKCU uninstall entry, and must be uninstalled from that account.
+
+## CI dry run 4 (after fix round 3)
+- Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40742775176: **success**. ISCC compiled the new installer script (all-users default, Startup shortcut), and `account.rs` and `app.rs` compiled on Windows.
+
+## PAUSED (2026-10-28 21:1x, by the human's choice)
+**State:** `feat/v1-core` is pushed and green in CI. 120 tests pass (113 lib, 2 icon, 5 policy). There is no PR and no tag yet.
+
+**Why paused:** the human's UNHCR-managed laptop can't run meh.
+- Application control blocks exes in user folders (G4-2, G4-4).
+- The elevated install went into the admin account's profile (G4-1, G4-3; fixed by D-18).
+- After the first runs, both the installer and the exe were blocked for every account, most likely by security tooling flagging an unsigned global keyboard hook.
+- The human was advised not to work around IT policy.
+
+**To resume:**
+1. **Gate 4:** the human runs the smoke checklist on a **personal** Windows PC or VM, using the build 4 artifact (or a fresh manual run). Use plan.md as annotated, plus the D-18 items in the fix round 3 report: the all-users install, the wrong-account warning, and the Startup shortcut.
+2. Fix anything found, then make one more manual CI build.
+3. **Gate 5:** draft the PR description from this folder (changes, decisions D-01..D-18, verification, deferred list), get the human's approval, then open the PR.
+4. After merge, the human bumps the version if needed and tags `v0.1.0`; CI publishes the release.
+
+**Optional later:** code signing (needed before IT would ever allow-list meh), plus the deferred features listed in gaps.md.
