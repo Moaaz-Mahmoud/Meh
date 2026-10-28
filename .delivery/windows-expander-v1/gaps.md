@@ -1,3 +1,5 @@
+> **Note:** gaps.md predates the decisions. Its "Hidden console / logging" row (log file plus panic hook) was overruled by D-12 (no log file), and "Config auto-reload" moved into v1 by D-10.
+
 # Gaps: windows-expander-v1
 
 "Exists" = off-the-shelf crate / Win32 API / runner tool, or espanso behavior we copy as-is. `(u)` = unverified in map.md. `<app>` = app name, not yet chosen.

@@ -204,7 +204,7 @@ The direct espanso repo pages (github.com/espanso/espanso) were blocked for fetc
 
 ## Code: tray-icon 0.26.1 notification facts (Phase 4 research)
 
-- Balloon notifications: tray-icon has no API. Use `TrayIconBuilder::with_guid(<fixed u128>)`, then `Shell_NotifyIconW(NIM_MODIFY, NOTIFYICONDATAW{ hWnd: tray.window_handle(), uFlags: NIF_INFO | NIF_GUID, guidItem: <same GUID>, szInfoTitle, szInfo, dwInfoFlags: NIIF_WARNING|NIIF_ERROR })`. Don't guess the internal uID (it is a process-global counter).
+- Balloon notifications: tray-icon has no API. Use `TrayIconBuilder::with_guid(<u128>)` (**as built:** the GUID is derived from the exe path in `core/ident.rs`, not fixed), then `Shell_NotifyIconW(NIM_MODIFY, NOTIFYICONDATAW{ hWnd: tray.window_handle(), uFlags: NIF_INFO | NIF_GUID, guidItem: <same GUID>, szInfoTitle, szInfo, dwInfoFlags: NIIF_WARNING|NIIF_ERROR })`. Don't guess the internal uID (it is a process-global counter).
 - The TrayIcon must be created on the thread running the GetMessageW loop. It is !Send, and dropping it removes the icon. Menu events come from `tray_icon::menu::MenuEvent::receiver()` (crossbeam channel), which can be polled from a timer on that loop.
 - `Icon::from_rgba(Vec<u8>, w, h)` works on all platforms; tooltip max is 128 UTF-16 units; `default-features=false` is safe on Windows; tray-icon's MSRV is 1.90.
 - Full notes: tray-icon source in ~/.cargo/registry (lib.rs:448 with_guid, lib.rs:713 window_handle, windows/mod.rs:666 apply_guid).

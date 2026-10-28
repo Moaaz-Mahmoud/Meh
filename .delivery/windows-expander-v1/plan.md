@@ -1,3 +1,13 @@
+> **Superseded in places (annotated after implementation).**
+> - Everything about `log.rs`, `LogEvent` and "the log" is replaced by the in-memory problems list (D-12, Gate 3). Smoke items 5 and 7 now read:
+>   - **5.** A broken save shows a tray notification and the old snippets keep working. "Show problems…" lists the file and line, with no typed text.
+>   - **7.** Nothing is written to disk except `base.yml`, so there is no log file to check.
+> - Tab and Enter never fire triggers (D-15), so `word_fires_on_each_separator` covers the 7 separators: space and `, . ? ! ; :`.
+> - The tray GUID is derived from the exe path (`core/ident.rs`), not fixed, because Windows ties an icon GUID to one unsigned exe path.
+> - `plan_keys()` is now part of `plan_injection()`. The events are `EnabledChanged` and others, not `Toggle`.
+> - Added modules: `core/ident.rs`, `core/input.rs`, `win/worker.rs`, `win/ui.rs`.
+> - The sample config has a single source (`include_str!`), so it needs no sync test.
+
 # Plan: D1 `windows-expander-v1` (meh v0.1.0)
 
 **Deliverable:** D1, a Windows plain-text expander in Rust, plus its release pipeline. **Branch:** `feat/v1-core`. **Base:** `main`. **One PR** into `Moaaz-Mahmoud/meh`.
