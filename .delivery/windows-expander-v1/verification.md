@@ -84,3 +84,8 @@ Checked and found OK: hook proc does no file I/O, no logging, no SendInput, no l
 6. Emoji trigger typed via Win+. (defect 8); dead-key layouts (é via ´ + e) do not cause wrong expansions.
 7. Expansion in Notepad, Word, a browser, Windows Terminal/conhost; multi-line text in a chat app (Enter sends).
 8. Explorer restart (taskbar recreated): icon comes back, balloon still addressed by GUID.
+
+## Re-verification after fix round 1
+
+Verifier: fresh independent agent (did not write the code). Date: 2026-10-28. Scope: fix-round items 1-18 (progress.md "## Fix round 1"), commits 175b8ed..df9e071. Scratch: /tmp/claude-0/-home-claude/ca56ba26-f4e7-585a-a211-3fcce2403df2/scratchpad/verify2. Status: IN PROGRESS.
+
