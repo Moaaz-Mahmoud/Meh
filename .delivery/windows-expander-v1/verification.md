@@ -135,3 +135,8 @@ Counts: PASS 12 (1, 5, 6, 10, 11, 12, 13, 14, 15, 16, 17, 18), PASS for core wit
 | N8 | src/core/config.rs:381 vs D-15 per-entry rule | A non-text entry in `triggers:` (`12`, `~`) skips the whole snippet, while a tab/newline entry skips only itself. Consistent with README ("skips such a snippet"), but inconsistent with the D-15 per-entry behavior | info | Optionally skip only that entry, as for D-15 |
 
 Note: someone committed this section's in-progress header as cac088e while this verification ran; this verifier made no commits.
+
+## Gate 4: human Windows test (in progress)
+| # | Observation | Status |
+|---|---|---|
+| G4-1 | After install, `meh.exe` was running, but `%APPDATA%\meh` did not exist for the signed-in user. `GetOwner` showed the process ran as `HCR-PF4923P5\eudadmin`; `whoami` was `unhcr\madany`. The exe was not in `%LOCALAPPDATA%\Programs\meh`, so setup had run elevated. The failure to create the folder was silent (`app.rs` discards the `ensure_sample` error). | FAIL, fixed per D-18 in fix round 3 |

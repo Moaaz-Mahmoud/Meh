@@ -127,3 +127,14 @@ The human said: "i don't use variables within triggers, so i don't care if it's 
 The human said: "if it's there, keep it. if not, no need to add it".
 - It is already implemented (`{{clipboard}}` with `type: clipboard`), so it stays.
 - It reads the clipboard only when a snippet using it expands, and it never writes to the clipboard.
+
+### D-18 (Gate 4 finding, 20:5x): Wrong-account install and launch
+**Found in the human's Windows test.** Setup ran elevated as a local admin account (`eudadmin`), likely through the managed laptop's privilege-elevation tool. As a result:
+- meh was installed into Program Files and run as eudadmin;
+- its config folder was created in eudadmin's profile;
+- the signed-in user (`unhcr\madany`) saw no `%APPDATA%\meh`.
+
+**Decision ("Warn in setup + app"):**
+- **Setup:** if it is running elevated (`IsAdmin`), it shows a warning before installing. The warning explains that meh is a per-user app, that an elevated install may go to another account's profile, and that the portable zip avoids this. The user can Cancel or Continue.
+- **App:** at startup, if the process's user differs from the interactive session's user, meh shows a warning that names both accounts and explains that snippets would live in the other account's profile. It offers Quit or Continue.
+- **Bug fix:** if creating the config folder or sample fails, this must no longer be silent. It is listed under "Show problems…" and raises a notification.
