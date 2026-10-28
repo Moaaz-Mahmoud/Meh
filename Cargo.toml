@@ -1,0 +1,24 @@
+[package]
+name = "meh"
+version = "0.1.0"
+edition = "2024"
+description = "A minimal espanso-style text expander for Windows"
+license = "MIT"
+repository = "https://github.com/Moaaz-Mahmoud/meh"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_norway = "0.9.42"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+dirs = "7.0.0"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(meh_typecheck)'] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

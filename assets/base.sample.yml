@@ -1,0 +1,55 @@
+# meh: your snippets live in this folder (%APPDATA%\meh\match).
+# Every *.yml / *.yaml file here is loaded; saving a file reloads it.
+# The format is a subset of espanso's match files.
+#
+# Triggers are case-sensitive. A plain trigger expands as soon as its
+# last character is typed, even in the middle of a word.
+
+matches:
+  # Plain trigger: type ":hi" and it becomes "Hello!".
+  - trigger: ":hi"
+    replace: "Hello!"
+
+  # Several triggers for the same text.
+  - triggers: [":ty", ":thx"]
+    replace: "Thank you"
+
+  # word: true waits for a separator (space, tab, newline or , . ? ! ; :)
+  # after the trigger, and only fires at the start of a word.
+  # "brb " becomes "be right back " but "xbrb " is left alone.
+  - trigger: "brb"
+    replace: "be right back"
+    word: true
+
+  # Date variable. format uses chrono/strftime specifiers.
+  - trigger: ":date"
+    replace: "{{today}}"
+    vars:
+      - name: today
+        type: date
+        params:
+          format: "%Y-%m-%d"
+
+  # offset is in seconds: 86400 = tomorrow, -86400 = yesterday.
+  - trigger: ":tomorrow"
+    replace: "{{tomorrow}}"
+    vars:
+      - name: tomorrow
+        type: date
+        params:
+          format: "%A %d %B"
+          offset: 86400
+
+  # Multi-line text: the "|" block keeps line breaks.
+  - trigger: ":sig"
+    replace: |
+      Best regards,
+      Your Name
+
+  # $|$ marks where the cursor ends up after the expansion.
+  - trigger: ":b"
+    replace: "<b>$|$</b>"
+
+  # Not supported in this version (such a snippet is skipped and listed
+  # under the tray's "Show problems..." item): regex, form, shell/script
+  # variables, propagate_case, left_word/right_word.
