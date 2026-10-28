@@ -67,6 +67,11 @@ pub enum SkipReason {
     MissingTrigger,
     /// No `replace` text.
     MissingReplace,
+    /// The trigger contains a tab or a line break (D-15). Only that trigger
+    /// is skipped.
+    TriggerHasTabOrNewline,
+    /// The replacement contains a tab (D-15).
+    ReplaceHasTab,
     /// A known key has the wrong kind of value (the key name is given).
     BadValue(&'static str),
 }
@@ -83,6 +88,10 @@ impl fmt::Display for SkipReason {
             SkipReason::EmptyTrigger => f.write_str("empty trigger"),
             SkipReason::MissingTrigger => f.write_str("no `trigger` or `triggers`"),
             SkipReason::MissingReplace => f.write_str("no `replace`"),
+            SkipReason::TriggerHasTabOrNewline => {
+                f.write_str("triggers cannot contain a tab or a line break")
+            }
+            SkipReason::ReplaceHasTab => f.write_str("the replacement cannot contain a tab"),
             SkipReason::BadValue(k) => write!(f, "invalid value for `{k}`"),
         }
     }
@@ -244,6 +253,11 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
         for trigger in parsed.triggers {
             if trigger.is_empty() {
                 skip(None, SkipReason::EmptyTrigger);
+            } else if has_tab_or_newline(&trigger) {
+                skip(
+                    Some(escape_controls(&trigger)),
+                    SkipReason::TriggerHasTabOrNewline,
+                );
             } else if !seen.insert(trigger.clone()) {
                 skip(Some(trigger), SkipReason::DuplicateTrigger);
             } else {
@@ -257,6 +271,19 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
         }
     }
     Ok(())
+}
+
+/// D-15: a trigger may not contain a tab or a line break.
+fn has_tab_or_newline(s: &str) -> bool {
+    s.contains(['\t', '\n', '\r'])
+}
+
+/// Shows tabs and line breaks as `\t`, `\n`, `\r`, so a reported trigger
+/// stays on one line of the problems box.
+fn escape_controls(s: &str) -> String {
+    s.replace('\t', "\\t")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 struct ParsedMatch {
@@ -295,7 +322,10 @@ fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
             .and_then(|s| s.first())
             .and_then(scalar_str)
     });
-    let fail = |reason: SkipReason| (first_trigger.clone().filter(|t| !t.is_empty()), reason);
+    let fail = |reason: SkipReason| {
+        let trigger = first_trigger.as_deref().filter(|t| !t.is_empty());
+        (trigger.map(escape_controls), reason)
+    };
 
     for key in m.keys() {
         let Some(key) = key.as_str() else {
@@ -326,6 +356,9 @@ fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
         Some(r) => scalar_str(r).ok_or_else(|| fail(SkipReason::BadValue("replace")))?,
         None => return Err(fail(SkipReason::MissingReplace)),
     };
+    if replace.contains('\t') {
+        return Err(fail(SkipReason::ReplaceHasTab));
+    }
 
     let word = match get(m, "word") {
         None => false,
@@ -643,6 +676,40 @@ matches:
                 SkipReason::MissingTrigger
             ]
         );
+    }
+
+    #[test]
+    fn trigger_with_tab_or_newline_skips_only_that_entry() {
+        // D-15: such a trigger is not loaded; the other triggers of the
+        // same `triggers:` list still are.
+        let l = parse(
+            "matches:\n  - triggers: [\":ok\", \"a\\tb\", \"c\\nd\", \"e\\rf\", \":ok2\"]\n    replace: \"x\"\n  - trigger: \"g\\th\"\n    replace: \"y\"\n  - trigger: \":z\"\n    replace: \"z\"\n",
+        );
+        assert_eq!(triggers(&l), [":ok", ":ok2", ":z"]);
+        assert_eq!(l.skipped.len(), 4, "{:?}", l.skipped);
+        assert!(
+            l.skipped
+                .iter()
+                .all(|s| s.reason == SkipReason::TriggerHasTabOrNewline),
+            "{:?}",
+            l.skipped
+        );
+        // Reported escaped, so the problems box stays one line per problem.
+        assert_eq!(l.skipped[0].trigger.as_deref(), Some("a\\tb"));
+        assert_eq!(l.skipped[1].trigger.as_deref(), Some("c\\nd"));
+    }
+
+    #[test]
+    fn replace_with_tab_skips_snippet() {
+        let l = parse(
+            "matches:\n  - triggers: [\":t1\", \":t2\"]\n    replace: \"a\\tb\"\n  - trigger: \":nl\"\n    replace: \"line1\\nline2\"\n",
+        );
+        // Newlines in the replacement are fine (D-15); tabs are not.
+        assert_eq!(triggers(&l), [":nl"]);
+        assert_eq!(l.snippets[0].replace, "line1\nline2");
+        assert_eq!(l.skipped.len(), 1, "{:?}", l.skipped);
+        assert_eq!(l.skipped[0].trigger.as_deref(), Some(":t1"));
+        assert_eq!(l.skipped[0].reason, SkipReason::ReplaceHasTab);
     }
 
     #[test]

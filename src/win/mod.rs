@@ -21,7 +21,7 @@ pub mod worker;
 /// memory and is never logged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyInput {
-    /// A typed character. Enter arrives as `'\n'`, Tab as `'\t'`.
+    /// A typed character. Enter and Tab arrive as [`KeyInput::Reset`].
     Char(char),
     /// Backspace: drop one buffered character.
     Backspace,

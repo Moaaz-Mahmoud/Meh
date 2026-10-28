@@ -14,8 +14,9 @@ matches:
   - triggers: [":ty", ":thx"]
     replace: "Thank you"
 
-  # word: true waits for a separator (space, tab, newline or , . ? ! ; :)
-  # after the trigger, and only fires at the start of a word.
+  # word: true waits for a separator (space or , . ? ! ; :) after the
+  # trigger, and only fires at the start of a word. Tab and Enter never
+  # expand anything.
   # "brb " becomes "be right back " but "xbrb " is left alone.
   - trigger: "brb"
     replace: "be right back"

@@ -1,10 +1,13 @@
-//! Rolling-buffer trigger matcher (D-08).
+//! Rolling-buffer trigger matcher (D-08, D-15).
 //!
 //! - Triggers are case-sensitive.
 //! - A plain trigger fires on its last character, even mid-word.
 //! - A `word: true` trigger fires on the separator typed after it, and only
 //!   if it starts the buffer or follows a separator. The separator is erased
 //!   with the trigger and re-typed after the replacement.
+//! - Tab and Enter (`'\t'`, `'\n'`, `'\r'`) never fire anything: the app
+//!   has already acted on them (moved focus, sent a message), so they only
+//!   clear the buffer (D-15).
 //! - When several triggers match, the longest one wins. A trigger that is a
 //!   prefix of another fires first (`:a` shadows `:ab`); this is a documented
 //!   limitation.
@@ -15,8 +18,13 @@
 
 use crate::core::config::Snippet;
 
-/// Word separators (D-08).
-pub const SEPARATORS: &[char] = &[' ', '\t', '\n', ',', '.', '?', '!', ';', ':'];
+/// Word separators (D-08 as amended by D-15: no Tab or Enter).
+pub const SEPARATORS: &[char] = &[' ', ',', '.', '?', '!', ';', ':'];
+
+/// Keys that clear the buffer when typed and never fire a trigger (D-15).
+fn is_reset_char(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r')
+}
 
 pub fn is_separator(c: char) -> bool {
     SEPARATORS.contains(&c)
@@ -82,8 +90,13 @@ impl Matcher {
         self.buf.is_empty()
     }
 
-    /// Feeds one typed character. On a hit the buffer is cleared.
+    /// Feeds one typed character. On a hit the buffer is cleared. Tab and
+    /// Enter only clear it (D-15).
     pub fn push_char(&mut self, c: char) -> Option<Hit> {
+        if is_reset_char(c) {
+            self.reset();
+            return None;
+        }
         if self.cap == 0 {
             return None;
         }
@@ -222,7 +235,7 @@ mod tests {
 
     #[test]
     fn word_fires_on_each_separator() {
-        for sep in [' ', '\t', '\n', ',', '.', '?', '!', ';', ':'] {
+        for sep in [' ', ',', '.', '?', '!', ';', ':'] {
             let mut m = Matcher::new(&[snip("brb", true)]);
             let mut typed = String::from("brb");
             typed.push(sep);
@@ -232,7 +245,27 @@ mod tests {
                 "separator {sep:?}"
             );
         }
-        assert_eq!(SEPARATORS.len(), 9);
+        assert_eq!(SEPARATORS.len(), 7);
+    }
+
+    #[test]
+    fn tab_and_enter_reset_without_firing() {
+        // D-15: Tab and Enter never fire a trigger (the app has already
+        // moved focus or sent the message); they only clear the buffer.
+        for key in ['\t', '\n', '\r'] {
+            let mut m = Matcher::new(&[snip("brb", true), snip(":hi", false)]);
+            assert!(type_str(&mut m, "brb").is_empty());
+            assert_eq!(m.push_char(key), None, "{key:?}");
+            assert_eq!(m.len(), 0, "{key:?} resets");
+            // A plain trigger split by Tab/Enter does not fire either.
+            assert!(type_str(&mut m, ":h").is_empty());
+            assert_eq!(m.push_char(key), None);
+            assert_eq!(m.push_char('i'), None, "{key:?} split the trigger");
+            // After the reset, the next word starts at a boundary.
+            m.push_char(key);
+            assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+            assert!(!is_separator(key));
+        }
     }
 
     #[test]

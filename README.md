@@ -62,7 +62,7 @@ matches:
 | Key | Meaning |
 |---|---|
 | `trigger`, `triggers` | One trigger, or several for the same text |
-| `replace` | The text. Line breaks are typed as Enter, tabs as Tab |
+| `replace` | The text. Line breaks are typed as Enter. Tabs are not allowed |
 | `word: true` | Fire only on whole words (see below) |
 | `vars` with `type: date` | `format` (strftime) and `offset` (seconds) |
 | `vars` with `type: clipboard` | The current clipboard text |
@@ -72,12 +72,15 @@ Not supported yet: `regex`, `form`, `shell`/`script`/`echo`/`random`/`choice` va
 
 If the same trigger appears twice, the first one wins and the second is listed as a problem.
 
+Tabs are not allowed anywhere in a snippet, and line breaks are not allowed in a trigger. A trigger with a tab or a line break is skipped (the other triggers in the same `triggers:` list still load), and a `replace` with a tab skips the whole snippet. Both are listed under **Show problems…**. Line breaks inside `replace` are fine.
+
 ## Matching rules
 
 - **Triggers are case-sensitive.** `:Hi` and `:hi` are different triggers.
 - **A plain trigger fires on its last character**, even in the middle of a word. `ther` would also fire inside `other`, which is why triggers usually start with `:`.
-- **A `word: true` trigger waits for a separator** after it: space, Tab, Enter, or one of `, . ? ! ; :`. The trigger must also start a word, at the start of typing or right after a separator. `brb ` expands and keeps the space; `xbrb ` does not expand.
+- **A `word: true` trigger waits for a separator** after it: a space or one of `, . ? ! ; :`. The trigger must also start a word, at the start of typing or right after a separator. `brb ` expands and keeps the space; `xbrb ` does not expand.
 - When two triggers match at once, the longer one wins. A trigger that is the start of another one (`:a` and `:ab`) fires first, so `:ab` can never be typed. Avoid such pairs.
+- **Tab and Enter never expand a trigger.** By the time meh sees them, the app has already moved to the next field or sent the message, so they only clear what meh has seen.
 - **Backspace** removes the last typed character, so fixing a typo inside a trigger still works.
 - These clear what meh has seen so far, because the cursor may have moved: a mouse click; arrow keys, Home, End, Page Up, Page Down, Esc, Enter and Tab; any Ctrl, Alt or Win shortcut; and dead keys (accent keys). Ctrl+Alt together counts as AltGr and types normally.
 

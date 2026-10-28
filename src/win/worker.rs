@@ -97,13 +97,9 @@ impl Worker {
             KeyInput::Reset => self.matcher.reset(),
             KeyInput::Backspace => self.matcher.backspace(),
             KeyInput::Char(c) => {
-                let hit = self.matcher.push_char(c);
-                // Enter and Tab are separators for `word` triggers (above),
-                // and they also reset the buffer (D-08).
-                if c == '\n' || c == '\t' {
-                    self.matcher.reset();
-                }
-                if let Some(hit) = hit {
+                // Enter and Tab come as Reset from the hook; the matcher
+                // also treats '\t' / '\n' as reset-only (D-15).
+                if let Some(hit) = self.matcher.push_char(c) {
                     self.expand(hit.idx, hit.erase, hit.retype);
                 }
             }

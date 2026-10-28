@@ -5,12 +5,10 @@
 //! translates the event and sends it over a channel. It never blocks, never
 //! touches files and never calls `SendInput` (the worker does).
 //!
-//! Buffer rules (D-08): Backspace drops one char; arrows, Home, End, PgUp,
-//! PgDn, Esc, IME keys, mouse clicks and Ctrl, Alt or Win combos reset.
-//! Ctrl+Alt held together is AltGr and is translated normally. A dead key
-//! resets. Enter and Tab are sent as `'\n'` and `'\t'`: they are word
-//! separators (so `brb` + Enter expands), and the worker resets the buffer
-//! right after them.
+//! Buffer rules (D-08, D-15): Backspace drops one char; Enter, Tab, arrows,
+//! Home, End, PgUp, PgDn, Esc, IME keys, mouse clicks and Ctrl, Alt or Win
+//! combos reset. Enter and Tab never fire a trigger (D-15). Ctrl+Alt held
+//! together is AltGr and is translated normally. A dead key resets.
 
 use super::inject::INJECT_TAG;
 use super::{Event, KeyInput};
@@ -148,8 +146,9 @@ fn translate(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
 
     match vk {
         VK_BACK => out(KeyInput::Backspace),
-        VK_RETURN => out(KeyInput::Char('\n')),
-        VK_TAB => out(KeyInput::Char('\t')),
+        // D-15: the app acts on Enter and Tab before we could, so they only
+        // reset and never fire a trigger.
+        VK_RETURN | VK_TAB => out(KeyInput::Reset),
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_HOME | VK_END | VK_PRIOR | VK_NEXT
         | VK_ESCAPE | VK_PROCESSKEY => out(KeyInput::Reset),
         // Unicode input injected by another tool (on-screen keyboard, ...):
