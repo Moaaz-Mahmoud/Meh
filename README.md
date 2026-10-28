@@ -8,12 +8,18 @@ meh runs in the tray. It has no window, no settings screen and no log file.
 
 Download a file from the [Releases](https://github.com/Moaaz-Mahmoud/meh/releases) page. There are two kinds:
 
-- **Installer** (`meh-X.Y.Z-setup.exe`). It installs for your user account only, so it never asks for administrator rights. It adds a Start Menu entry. The **Start Meh when I sign in to Windows** box is ticked by default; untick it if you want to start meh yourself. Uninstall from *Settings → Apps*. Your snippets in `%APPDATA%\meh` are kept.
-- **Portable zip** (`meh-X.Y.Z-windows-x64.zip`). Unzip it anywhere and run `meh.exe`. It does not start with Windows on its own. `base.sample.yml` in the zip is the same sample meh writes on first run.
+- **Installer** (`meh-X.Y.Z-setup.exe`). Run it. The first page asks how to install:
+  - **Install for all users** (the default) puts meh in Program Files and needs administrator rights. Use this on a managed (work) laptop: there you may only be able to start setup with *Run as administrator*, sometimes with a separate admin account, and only apps in Program Files are allowed to run. Keep **Install for all users**. When setup finishes, **start Meh from the Start Menu as yourself** (not as administrator). meh keeps your snippets in the profile of the account it runs as, so it must run as you.
+  - **Install for me only** needs no administrator rights and is fine on a personal PC. It installs into `%LOCALAPPDATA%\Programs\meh` and can start meh when it finishes. Don't pick it when setup runs as a different (admin) account: meh would be installed for that account, not for you. Setup asks before doing that.
 
-The exe is not code-signed, so Windows SmartScreen may warn the first time. Choose *More info → Run anyway*.
+  The **Start Meh when you sign in to Windows** box is ticked by default. It adds a shortcut to the Startup folder (for every user in an all-users install), so meh starts as whoever signs in. Untick it if you want to start meh yourself. Uninstall from *Settings → Apps*. Every user's snippets in `%APPDATA%\meh` are kept.
+- **Portable zip** (`meh-X.Y.Z-windows-x64.zip`). Unzip it anywhere in your own folders and run `meh.exe`. This works only where Windows lets you run apps from your own folders; managed laptops with application control usually block it. It does not start with Windows on its own: to do that, put a shortcut to `meh.exe` in your Startup folder (type `shell:startup` in the Explorer address bar). `base.sample.yml` in the zip is the same sample meh writes on first run.
+
+The exe is not code-signed, so Windows SmartScreen may warn the first time. Choose *More info → Run anyway*. If your IT only allows signed apps, meh may be blocked even in Program Files.
 
 Only one meh runs at a time. Starting it again does nothing.
+
+If meh is started as a different account than the one you signed in with (for example by an admin account), it says so at startup, names both accounts, and offers to quit. Quit, then start Meh from the Start Menu as yourself.
 
 ## Snippets
 
@@ -99,7 +105,7 @@ If a file has a YAML error, meh keeps using the snippets it had before and shows
 - **Enabled**: untick it to pause meh; tick it to resume.
 - **Reload snippets**: reread the match folder now.
 - **Open config folder**: open `%APPDATA%\meh\match` in Explorer.
-- **Show problems…**: config errors (file and line), skipped snippets and failed expansions, such as a clipboard variable while the clipboard holds no text.
+- **Show problems…**: config errors (file and line), skipped snippets, failed expansions (such as a clipboard variable while the clipboard holds no text), and a config folder that could not be created or watched.
 - **Quit**
 
 ## Privacy
@@ -114,6 +120,8 @@ meh reads every key you type, so it is built to keep nothing:
 ## Known limitations
 
 - **Windows run as administrator.** meh does not expand in apps running as administrator, such as an elevated terminal or Task Manager. Windows blocks a normal app from sending keys to an elevated one. Run that app without elevation if you need snippets there.
+- **Managed laptops.** On laptops with application control, meh runs only from Program Files, so use the installer with **Install for all users**, then start meh from the Start Menu as yourself (see [Install](#install)). meh must run as your own account: run as another account (an admin account, or *Run as administrator* with other credentials) it uses that account's snippets folder, not yours. meh warns about this at startup. If IT only allows signed apps, meh may not run at all, because it is not code-signed yet.
+- If meh cannot create its config folder (`%APPDATA%\meh\match`), it starts with no snippets, shows a notification and lists the reason under **Show problems…**.
 - Some editors with auto-indent or auto-close (code editors, for example) may shift multi-line text or the `$|$` cursor position.
 - Long replacements are typed key by key, so they take a moment and can be slow in heavy apps.
 - If you hold Shift, Ctrl or Alt when a trigger fires, meh waits up to half a second for you to let go before typing.
