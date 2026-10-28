@@ -155,9 +155,13 @@ impl Matcher {
         }
     }
 
-    /// Drops the last buffered character (the user pressed Backspace).
+    /// Drops the last buffered character (the user pressed Backspace). On
+    /// an empty buffer it erases text we never saw, so whatever is now left
+    /// of the caret is unknown and no longer counts as a word boundary.
     pub fn backspace(&mut self) {
-        self.buf.pop();
+        if self.buf.pop().is_none() {
+            self.start_is_boundary = false;
+        }
     }
 
     /// Clears the buffer (caret moved, focus changed, hit, ...).
@@ -304,14 +308,33 @@ mod tests {
     }
 
     #[test]
-    fn backspace_on_empty_is_noop() {
+    fn backspace_on_empty_keeps_buffer_empty() {
         let mut m = Matcher::new(&[snip(":hi", false), snip("brb", true)]);
         m.backspace();
         m.backspace();
         assert_eq!(m.len(), 0);
+        // Plain triggers do not care what came before.
         assert_eq!(type_str(&mut m, ":hi"), [hit(0, 3, None)]);
+    }
+
+    #[test]
+    fn backspace_on_empty_makes_start_not_a_boundary() {
+        // After a click and a Backspace we no longer know what is left of
+        // the caret (it may be the end of a word), so `brb ` must not fire
+        // as a word trigger (verifier defect 16).
+        let mut m = Matcher::new(&[snip("brb", true)]);
+        m.reset();
         m.backspace();
-        assert_eq!(type_str(&mut m, "brb "), [hit(1, 4, Some(' '))]);
+        assert!(type_str(&mut m, "brb ").is_empty());
+        // The separator just typed is a boundary again.
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+        // Same right after an expansion (buffer cleared by the hit).
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+        m.backspace();
+        assert!(type_str(&mut m, "brb ").is_empty());
+        // A reset (click, arrow) makes the start a boundary again.
+        m.reset();
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
     }
 
     #[test]
