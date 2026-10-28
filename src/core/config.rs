@@ -68,9 +68,10 @@ pub enum SkipReason {
     MissingTrigger,
     /// No `replace` text.
     MissingReplace,
-    /// The trigger contains a tab or a line break (D-15). Only that trigger
-    /// is skipped.
-    TriggerHasTabOrNewline,
+    /// The trigger contains a tab, a line break or another control
+    /// character (D-15; none of them can be typed into a trigger). Only that
+    /// trigger is skipped.
+    TriggerHasControlChar,
     /// The replacement contains a tab (D-15).
     ReplaceHasTab,
     /// A date variable's `format` would type a tab (a tab or `%t`, D-15).
@@ -94,8 +95,8 @@ impl fmt::Display for SkipReason {
             SkipReason::EmptyTrigger => f.write_str("empty trigger"),
             SkipReason::MissingTrigger => f.write_str("no `trigger` or `triggers`"),
             SkipReason::MissingReplace => f.write_str("no `replace`"),
-            SkipReason::TriggerHasTabOrNewline => {
-                f.write_str("triggers cannot contain a tab or a line break")
+            SkipReason::TriggerHasControlChar => {
+                f.write_str("triggers cannot contain a tab, a line break or a control character")
             }
             SkipReason::ReplaceHasTab => f.write_str("the replacement cannot contain a tab"),
             SkipReason::DateFormatHasTab => {
@@ -279,10 +280,10 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
         for trigger in parsed.triggers {
             if trigger.is_empty() {
                 skip(None, SkipReason::EmptyTrigger);
-            } else if has_tab_or_newline(&trigger) {
+            } else if trigger.chars().any(is_untypeable_in_trigger) {
                 skip(
                     Some(escape_controls(&trigger)),
-                    SkipReason::TriggerHasTabOrNewline,
+                    SkipReason::TriggerHasControlChar,
                 );
             } else if !seen.insert(trigger.clone()) {
                 skip(Some(trigger), SkipReason::DuplicateTrigger);
@@ -299,17 +300,28 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
     Ok(())
 }
 
-/// D-15: a trigger may not contain a tab or a line break.
-fn has_tab_or_newline(s: &str) -> bool {
-    s.contains(['\t', '\n', '\r'])
+/// D-15: a trigger may not contain a tab or a line break. Other control
+/// characters (VT, FF, NEL, ...) can never be typed either, since the hook
+/// turns them into resets, and U+2028/U+2029 are line breaks.
+fn is_untypeable_in_trigger(c: char) -> bool {
+    c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')
 }
 
-/// Shows tabs and line breaks as `\t`, `\n`, `\r`, so a reported trigger
-/// stays on one line of the problems box.
+/// Shows tabs and line breaks as `\t`, `\n`, `\r` and other untypeable
+/// characters as `\u{..}`, so a reported trigger stays on one line of the
+/// problems box.
 fn escape_controls(s: &str) -> String {
-    s.replace('\t', "\\t")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            c if is_untypeable_in_trigger(c) => out.push_str(&c.escape_unicode().to_string()),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 struct ParsedMatch {
@@ -738,13 +750,41 @@ matches:
         assert!(
             l.skipped
                 .iter()
-                .all(|s| s.reason == SkipReason::TriggerHasTabOrNewline),
+                .all(|s| s.reason == SkipReason::TriggerHasControlChar),
             "{:?}",
             l.skipped
         );
         // Reported escaped, so the problems box stays one line per problem.
         assert_eq!(l.skipped[0].trigger.as_deref(), Some("a\\tb"));
         assert_eq!(l.skipped[1].trigger.as_deref(), Some("c\\nd"));
+    }
+
+    #[test]
+    fn trigger_with_any_control_or_line_separator_skips_only_that_entry() {
+        // NEL, VT, FF and other control characters can never be typed (the
+        // hook turns them into resets), and U+2028/U+2029 are line breaks.
+        let l = parse(
+            "matches:\n  - triggers: [\":ok\", \"a\\x0bb\", \"a\\x0cb\", \"a\\x01b\", \"a\\x7fb\", \"a\\Nb\", \"a\\Lb\", \"a\\Pb\", \":ok2\"]\n    replace: \"x\"\n",
+        );
+        assert_eq!(triggers(&l), [":ok", ":ok2"]);
+        let skipped: Vec<_> = l
+            .skipped
+            .iter()
+            .map(|s| (s.trigger.as_deref(), s.reason.clone()))
+            .collect();
+        let r = SkipReason::TriggerHasControlChar;
+        assert_eq!(
+            skipped,
+            [
+                (Some("a\\u{b}b"), r.clone()),
+                (Some("a\\u{c}b"), r.clone()),
+                (Some("a\\u{1}b"), r.clone()),
+                (Some("a\\u{7f}b"), r.clone()),
+                (Some("a\\u{85}b"), r.clone()),
+                (Some("a\\u{2028}b"), r.clone()),
+                (Some("a\\u{2029}b"), r),
+            ]
+        );
     }
 
     #[test]

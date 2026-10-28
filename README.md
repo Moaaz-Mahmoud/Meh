@@ -74,7 +74,7 @@ If the same trigger appears twice, the first one wins and the second is listed a
 
 Quote a trigger or a `replace` that looks like a number or true/false (`trigger: "1.10"`, not `trigger: 1.10`). YAML would otherwise change the text (`1.10` becomes `1.1`), so meh skips such a snippet and lists it under **Show problems…**.
 
-Tabs are not allowed anywhere in a snippet, and line breaks are not allowed in a trigger. A trigger with a tab or a line break is skipped (the other triggers in the same `triggers:` list still load), and a `replace` with a tab skips the whole snippet. A date `format` with a tab or `%t` skips the snippet too. All of these are listed under **Show problems…**. Line breaks inside `replace` are fine. meh never presses Tab: a tab in the clipboard text is typed as a space.
+Tabs are not allowed anywhere in a snippet, and line breaks and other control characters are not allowed in a trigger. A trigger with a tab, a line break (including Unicode line and paragraph separators) or a control character is skipped (the other triggers in the same `triggers:` list still load), and a `replace` with a tab skips the whole snippet. A date `format` with a tab or `%t` skips the snippet too. All of these are listed under **Show problems…**. Line breaks inside `replace` are fine. meh never presses Tab: a tab in the clipboard text is typed as a space.
 
 ## Matching rules
 
