@@ -36,3 +36,32 @@
 - Steps passed: toolchain, Test, Build, Version, Installer, Portable zip, Upload build. Publish release was **skipped**, as expected on a manual run.
 - Artifact `meh-dist` is 2,315,920 bytes. Its contents and the raw logs could not be fetched from the dev workspace (artifact storage host blocked by the proxy), so the human inspects it at Gate 4.
 - Annotation: `actions/checkout@v4` and `actions/upload-artifact@v4` target the deprecated Node 20 and are forced onto Node 24. Low priority; bump the majors later.
+
+## Fix round 1
+Inputs: verification.md defects 1-19, the convention audit, D-15 and D-16. Verifier #5 is closed by D-16, #17 is accepted (it complies with D-12), and #18 (stale plan.md smoke wording) is not in this round's scope.
+
+| Item | Source | Commit | Status |
+|---|---|---|---|
+| 1 | Verifier #1: date year outside 0..=9999 panics | 175b8ed | fixed; `date_year_outside_0_to_9999_is_err_not_panic` |
+| 2 | Verifier #2: ShellExecuteW on the hook thread | 3856f55 | fixed (short-lived thread + CoInitializeEx); MessageBoxW stays (modal loop keeps hooks serviced, comment in `ui::message_box`) |
+| 3 | D-15 (replaces verifier #3) | f6f16ae | fixed; `tab_and_enter_reset_without_firing`, `trigger_with_tab_or_newline_skips_only_that_entry`, `replace_with_tab_skips_snippet` |
+| 4 | Verifier #4: keys typed while an expansion is pending | 5648b4b | fixed as specified (BUSY flag, hook sends Reset, no replay); limitation in README |
+| 5 | Verifier #6: non-mapping `matches:` entry | f04735d | fixed; `non_mapping_match_entry_skips_only_that_entry` |
+| 6 | Verifier #7: `$\|$` at the end with a word trigger | 3bc4963 | fixed (`Expansion::has_marker`); 2 tests |
+| 7 | Verifier #8: surrogate pairs from VK_PACKET | 9ae8e20 | fixed (`core::input::Utf16Joiner`, thread-local in hook); 5 tests |
+| 8 | Verifier #9: Ctrl+Alt with no character | 9ae8e20 | fixed (`core::input::interpret_to_unicode`, `is_shortcut`); 2 tests |
+| 9 | Verifier #10: CapsLock state | 9ae8e20 | kept `GetKeyState(VK_CAPITAL) & 1`, caveat comment; needs Windows test |
+| 10 | Verifier #11: file order | 29384cc | fixed; `load_dir_sorts_file_names_case_insensitively`, `file_order_key_breaks_ties_by_exact_name` |
+| 11 | Verifier #12: unquoted numbers/bools | c020e8d | skipped with "quote this value" (serde_norway keeps no source text); `unquoted_number_or_bool_text_is_skipped_with_quote_hint` |
+| 12 | Verifier #13: dead INJECTING | 5648b4b | repurposed as the BUSY flag from item 4, read by the hook |
+| 13 | Verifier #14: watcher start failure silent | 9f08832 | fixed (standing `LiveReloadUnavailable` problem + notice); 2 tests |
+| 14 | Verifier #15: LICENSE in zip | b881168 | fixed; `portable_zip_ships_the_license` |
+| 15 | Verifier #16: Backspace on empty buffer | 5018228 | fixed; `backspace_on_empty_makes_start_not_a_boundary` |
+| 16 | Audit: version check after build | b881168 | fixed; `version_check_runs_before_test_and_build` |
+| 17 | Audit lows: rust-version, "Meh" literal, enabled state | c365e1f | fixed (`rust-version = "1.90"`, `core::APP_NAME`, `hook::ENABLED` is the only enabled flag) |
+| 18 | Verifier #19: Node 20 actions | 6574dff | bumped to checkout@v7 and upload-artifact@v7 (each tag's action.yml declares node24) |
+| docs | README for D-15 and the new rules | f6f16ae, c020e8d, 29384cc, 5648b4b, 01363db | done |
+
+Checks at 01363db: `cargo test --locked` 98 + 2 + 4 passed; `cargo clippy --all-targets -- -D warnings` clean; meh_typecheck `cargo check --lib` and `cargo clippy --lib -- -D warnings` clean; `cargo fmt --check` clean; Cargo.lock unchanged.
+
+Still Windows-only (first compiled in the next CI run): `app.rs` (OpenFolder thread, WatchFailed, EnabledChanged, APP_NAME) and `tray.rs` (APP_NAME). Needs a human Windows test: CapsLock case (#10), emoji panel trigger (#8), Ctrl+Alt shortcut reset vs AltGr text (#9), typing during the modifier wait (#4), Open config folder on a cold Explorer (#2).
