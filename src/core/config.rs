@@ -75,6 +75,9 @@ pub enum SkipReason {
     ReplaceHasTab,
     /// A known key has the wrong kind of value (the key name is given).
     BadValue(&'static str),
+    /// A text key holds an unquoted number or boolean (`trigger: 1.10`).
+    /// YAML would change its text (`1.1`), so it must be quoted.
+    NeedsQuotes(&'static str),
 }
 
 impl fmt::Display for SkipReason {
@@ -94,6 +97,10 @@ impl fmt::Display for SkipReason {
             }
             SkipReason::ReplaceHasTab => f.write_str("the replacement cannot contain a tab"),
             SkipReason::BadValue(k) => write!(f, "invalid value for `{k}`"),
+            SkipReason::NeedsQuotes(k) => write!(
+                f,
+                "`{k}` is a number or true/false; quote this value (\"...\") to use it as text"
+            ),
         }
     }
 }
@@ -316,7 +323,8 @@ fn get<'a>(m: &'a Mapping, key: &str) -> Option<&'a Value> {
     m.get(key).filter(|v| !v.is_null())
 }
 
-/// Scalars (string, number, bool) as text, like YAML users expect.
+/// Scalars (string, number, bool) as text. Used only where the exact text
+/// does not matter (variable names).
 fn scalar_str(v: &Value) -> Option<String> {
     match v {
         Value::String(s) => Some(s.clone()),
@@ -326,18 +334,29 @@ fn scalar_str(v: &Value) -> Option<String> {
     }
 }
 
+/// The text of a `trigger`, `triggers` entry or `replace`. Only YAML strings
+/// qualify: an unquoted number or boolean has already lost its source text
+/// (`1.10` parses as 1.1, `1e3` as 1000.0, and the YAML library keeps no
+/// copy of the original), so it is rejected with a hint to quote it.
+fn text_value(v: &Value, key: &'static str) -> Result<String, SkipReason> {
+    match v {
+        Value::String(s) => Ok(s.clone()),
+        Value::Number(_) | Value::Bool(_) => Err(SkipReason::NeedsQuotes(key)),
+        _ => Err(SkipReason::BadValue(key)),
+    }
+}
+
 type SkipErr = (Option<String>, SkipReason);
 
 fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
     // Best-effort trigger for reporting, before anything else can fail.
-    let first_trigger = get(m, "trigger").and_then(scalar_str).or_else(|| {
+    let first_trigger = get(m, "trigger").and_then(Value::as_str).or_else(|| {
         get(m, "triggers")
             .and_then(Value::as_sequence)
-            .and_then(|s| s.first())
-            .and_then(scalar_str)
+            .and_then(|s| s.iter().find_map(Value::as_str))
     });
     let fail = |reason: SkipReason| {
-        let trigger = first_trigger.as_deref().filter(|t| !t.is_empty());
+        let trigger = first_trigger.filter(|t| !t.is_empty());
         (trigger.map(escape_controls), reason)
     };
 
@@ -352,14 +371,14 @@ fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
 
     let mut triggers = Vec::new();
     if let Some(t) = get(m, "trigger") {
-        triggers.push(scalar_str(t).ok_or_else(|| fail(SkipReason::BadValue("trigger")))?);
+        triggers.push(text_value(t, "trigger").map_err(fail)?);
     }
     if let Some(ts) = get(m, "triggers") {
         let seq = ts
             .as_sequence()
             .ok_or_else(|| fail(SkipReason::BadValue("triggers")))?;
         for t in seq {
-            triggers.push(scalar_str(t).ok_or_else(|| fail(SkipReason::BadValue("triggers")))?);
+            triggers.push(text_value(t, "triggers").map_err(fail)?);
         }
     }
     if triggers.is_empty() {
@@ -367,7 +386,7 @@ fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
     }
 
     let replace = match get(m, "replace") {
-        Some(r) => scalar_str(r).ok_or_else(|| fail(SkipReason::BadValue("replace")))?,
+        Some(r) => text_value(r, "replace").map_err(fail)?,
         None => return Err(fail(SkipReason::MissingReplace)),
     };
     if replace.contains('\t') {
@@ -746,6 +765,45 @@ matches:
             assert_eq!(s.reason, SkipReason::BadValue("matches"));
             assert_eq!(s.trigger, None);
         }
+    }
+
+    #[test]
+    fn unquoted_number_or_bool_text_is_skipped_with_quote_hint() {
+        // YAML would turn `1.10` into 1.1 and `1e3` into 1000.0, so such
+        // values are not guessed at: the user is asked to quote them.
+        let l = parse(
+            r#"
+matches:
+  - trigger: 1.10
+    replace: "x"
+  - trigger: ":n"
+    replace: 1e3
+  - triggers: [":ok", true]
+    replace: "y"
+  - trigger: ":q"
+    replace: "1e3"
+  - trigger: "2.50"
+    replace: "yes"
+"#,
+        );
+        assert_eq!(triggers(&l), [":q", "2.50"]);
+        assert_eq!(l.snippets[0].replace, "1e3");
+        assert_eq!(l.snippets[1].replace, "yes");
+        let reasons: Vec<_> = l.skipped.iter().map(|s| s.reason.clone()).collect();
+        assert_eq!(
+            reasons,
+            [
+                SkipReason::NeedsQuotes("trigger"),
+                SkipReason::NeedsQuotes("replace"),
+                SkipReason::NeedsQuotes("triggers"),
+            ]
+        );
+        assert_eq!(l.skipped[1].trigger.as_deref(), Some(":n"));
+        assert!(
+            SkipReason::NeedsQuotes("replace")
+                .to_string()
+                .contains("quote this value")
+        );
     }
 
     #[test]
