@@ -111,3 +111,14 @@ Ordered by impact. `<app>` = the app name from Q-02. Each recommended option fit
 The human said: "Okay to compile and build occasionally, by low rate I meant not with every push. Just keep things balanced."
 - An occasional, deliberate build-only `workflow_dispatch` run is fine. For example: once after the Windows layer lands, and again after a batch of fixes. There is still no push or PR trigger.
 - To make `workflow_dispatch` available, **only** `.github/workflows/release.yml` goes onto `main` as a standalone commit (GitHub only offers manual runs for workflows on the default branch). All code still goes through the PR.
+
+### D-15 (Gate 4 prep, 19:3x): Tab and newline rules (replaces part of D-08)
+The human said: "newlines can appear within the expanded text, but not within the trigger. tab is not allowed anywhere".
+- **Typed Tab and Enter never fire a trigger.** They only reset the buffer, and the separators for `word: true` are space and `, . ? ! ; :`. This removes the verifier's defect 3, where Tab moved focus first and Enter sent a chat message first.
+- **A trigger containing a newline or a tab** is not loaded. The bad entry is skipped and listed under "Show problems…". Other triggers in the same `triggers:` list still load.
+- **A replacement containing a tab** is not loaded either. The snippet is skipped and listed under "Show problems…".
+- Newlines inside the replacement are still allowed, and each one is typed as Enter.
+
+### D-16: Unknown variables
+The human said: "i don't use variables within triggers, so i don't care if it's handled at all".
+- This is accepted as is. A `{{name}}` with no matching `vars:` entry is typed literally, with no problem entry. Verifier defect 5 is closed as accepted behavior, not a defect.
