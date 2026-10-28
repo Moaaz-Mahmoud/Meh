@@ -2,7 +2,8 @@
 //!
 //! Rules (D-05, D-07, D-11):
 //! - Snippets come from `<config_dir>/match/*.yml|*.yaml`, read in file-name
-//!   order, ignoring case (`a.yml` before `B.yml`).
+//!   order, ignoring case (`a.yml` before `B.yml`), in plain character order
+//!   (`10.yml` before `9.yml`).
 //! - A YAML syntax or shape error fails the whole load ([`ConfigError`]), so the
 //!   caller can keep the last good set.
 //! - A match that uses a feature v1 lacks is skipped and reported as a
@@ -232,8 +233,9 @@ pub fn load_dir(dir: &Path) -> Result<Loaded, ConfigError> {
     Ok(loaded)
 }
 
-/// Load order of match files: by name ignoring case, as Explorer shows
-/// them, then by exact name so the order is total.
+/// Load order of match files: by lowercased name in plain character order
+/// (so `10.yml` before `9.yml`, unlike Explorer's natural sort), then by
+/// exact name so the order is total.
 fn file_order(a: &str, b: &str) -> std::cmp::Ordering {
     a.to_lowercase()
         .cmp(&b.to_lowercase())

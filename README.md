@@ -19,7 +19,9 @@ Only one meh runs at a time. Starting it again does nothing.
 
 Snippets live in **`%APPDATA%\meh\match\`**. Paste that path into the Explorer address bar, or use **Open config folder** in the tray menu. On first run meh creates `base.yml` there with commented examples. meh never overwrites that file and never reads espanso's folder.
 
-Every `*.yml` and `*.yaml` file in that folder is loaded, in file-name order (ignoring case, as Explorer sorts them):
+Every `*.yml` and `*.yaml` file in that folder is loaded. Files are sorted by file name, ignoring case, using plain character order — so `10.yml` loads before `9.yml`, and accented names come after `z`. This order is not always the one Explorer shows. It matters only when two files define the same trigger: the file loaded first wins.
+
+An example file:
 
 ```yaml
 matches:
