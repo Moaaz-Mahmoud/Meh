@@ -122,3 +122,8 @@ The human said: "newlines can appear within the expanded text, but not within th
 ### D-16: Unknown variables
 The human said: "i don't use variables within triggers, so i don't care if it's handled at all".
 - This is accepted as is. A `{{name}}` with no matching `vars:` entry is typed literally, with no problem entry. Verifier defect 5 is closed as accepted behavior, not a defect.
+
+### D-17: Clipboard variable
+The human said: "if it's there, keep it. if not, no need to add it".
+- It is already implemented (`{{clipboard}}` with `type: clipboard`), so it stays.
+- It reads the clipboard only when a snippet using it expands, and it never writes to the clipboard.
