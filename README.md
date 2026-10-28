@@ -82,7 +82,7 @@ Tabs are not allowed anywhere in a snippet, and line breaks and other control ch
 
 - **Triggers are case-sensitive.** `:Hi` and `:hi` are different triggers.
 - **A plain trigger fires on its last character**, even in the middle of a word. `ther` would also fire inside `other`, which is why triggers usually start with `:`.
-- **A `word: true` trigger waits for a separator** after it: a space or one of `, . ? ! ; :`. The trigger must also start a word, at the start of typing or right after a separator. `brb ` expands and keeps the space; `xbrb ` does not expand.
+- **A `word: true` trigger waits for a separator** after it: a space or one of `, . ? ! ; :`. The trigger must also start a word, at the start of typing or right after a separator. `brb ` expands and keeps the space; `xbrb ` does not expand. Right after an expansion, a new word starts only if the expanded text ended with a separator or a line break: with `:hi` → `Hello`, typing `:hibrb ` does not expand `brb`, while `brb brb ` expands both.
 - When two triggers match at once, the longer one wins. A trigger that is the start of another one (`:a` and `:ab`) fires first, so `:ab` can never be typed. Avoid such pairs.
 - **Tab and Enter never expand a trigger.** By the time meh sees them, the app has already moved to the next field or sent the message, so they only clear what meh has seen.
 - **Backspace** removes the last typed character, so fixing a typo inside a trigger still works. Backspace past the start of what meh has seen erases text meh never saw, so the next `word: true` trigger needs a separator before it.

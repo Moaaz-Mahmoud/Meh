@@ -13,6 +13,9 @@
 //!   limitation.
 //! - The buffer is bounded to what the longest trigger can need, and it is
 //!   cleared after every hit. The caller resets it on caret moves (D-08).
+//! - After a hit, the buffer start is a word boundary only if the caller
+//!   says the typed output left one before the caret ([`Matcher::after_expansion`]),
+//!   so `:hi` -> `Hello` followed by `brb ` does not fire `brb`.
 //!
 //! The buffer holds typed text only in memory and is never exposed.
 
@@ -139,8 +142,12 @@ impl Matcher {
                 best = Some(candidate);
             }
         }
-        if best.is_some() {
-            self.reset();
+        if let Some(hit) = best {
+            // A best guess until the caller says what the replacement left
+            // before the caret (`after_expansion`): a re-typed separator is
+            // a boundary, the end of a plain replacement is not known to be.
+            self.buf.clear();
+            self.start_is_boundary = hit.retype.is_some();
         }
         best
     }
@@ -162,6 +169,16 @@ impl Matcher {
         if self.buf.pop().is_none() {
             self.start_is_boundary = false;
         }
+    }
+
+    /// Call after a hit's replacement has been typed (or has failed).
+    /// `boundary` is whether the character now left of the caret is a word
+    /// boundary (see `Expansion::boundary_before_caret`). After a failed
+    /// expansion the typed trigger is still there, so pass whether it ended
+    /// in a separator (`hit.retype.is_some()`).
+    pub fn after_expansion(&mut self, boundary: bool) {
+        self.buf.clear();
+        self.start_is_boundary = boundary;
     }
 
     /// Clears the buffer (caret moved, focus changed, hit, ...).
@@ -335,6 +352,37 @@ mod tests {
         // A reset (click, arrow) makes the start a boundary again.
         m.reset();
         assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+    }
+
+    #[test]
+    fn plain_hit_then_word_trigger_needs_a_boundary() {
+        // `:hi` -> "<:hi>" ends in a letter-like char, so `brb ` typed right
+        // after it is glued to the replacement and must not fire.
+        let mut m = Matcher::new(&[snip(":hi", false), snip("brb", true)]);
+        assert_eq!(type_str(&mut m, ":hi"), [hit(0, 3, None)]);
+        assert!(type_str(&mut m, "brb ").is_empty(), "no worker call");
+        m.reset();
+        assert_eq!(type_str(&mut m, ":hi"), [hit(0, 3, None)]);
+        m.after_expansion(false);
+        assert!(type_str(&mut m, "brb ").is_empty());
+        // The worker says the output ended in a separator: the next word
+        // trigger may fire.
+        assert_eq!(type_str(&mut m, ":hi"), [hit(0, 3, None)]);
+        m.after_expansion(true);
+        assert_eq!(type_str(&mut m, "brb "), [hit(1, 4, Some(' '))]);
+    }
+
+    #[test]
+    fn word_hit_then_word_trigger_still_fires() {
+        // `brb brb `: the re-typed space is a boundary.
+        let mut m = Matcher::new(&[snip("brb", true)]);
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+        m.after_expansion(true);
+        assert_eq!(type_str(&mut m, "brb "), [hit(0, 4, Some(' '))]);
+        m.after_expansion(true);
+        assert_eq!(m.len(), 0);
+        assert_eq!(type_str(&mut m, "brb."), [hit(0, 4, Some('.'))]);
     }
 
     #[test]

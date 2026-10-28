@@ -9,6 +9,7 @@
 //! - A tab in a variable's value is typed as a space (D-15: no Tab key).
 
 use crate::core::config::{Snippet, VarKind};
+use crate::core::matcher::is_separator;
 use chrono::{DateTime, Datelike, FixedOffset, TimeDelta};
 use std::collections::HashMap;
 use std::fmt::{self, Write as _};
@@ -25,6 +26,30 @@ pub struct Expansion {
     /// Whether `replace` had a `$|$`. A marker at the very end has
     /// `left == 0` but still places the cursor before a re-typed separator.
     pub has_marker: bool,
+}
+
+impl Expansion {
+    /// Whether the character left of the caret, once this expansion and the
+    /// re-typed separator `retype` have been typed, is a word boundary (a
+    /// separator or a line break). With a marker the caret is not at the
+    /// end. If the caret ends where the trigger started, the boundary is
+    /// known only for a word trigger (it fired at one).
+    pub fn boundary_before_caret(&self, retype: Option<char>) -> bool {
+        if !self.has_marker && retype.is_some() {
+            return true;
+        }
+        let mut before = self.text.chars().rev().peekable();
+        for _ in 0..self.left {
+            // One Left crosses a CRLF as a whole.
+            if before.next() == Some('\n') {
+                before.next_if_eq(&'\r');
+            }
+        }
+        match before.next() {
+            Some(c) => is_separator(c) || c == '\n' || c == '\r',
+            None => retype.is_some(),
+        }
+    }
 }
 
 /// Why an expansion failed. Holds only config-derived variable names.
@@ -519,6 +544,28 @@ mod tests {
             plan_injection(4, &e, Some('.')).last(),
             Some(&Key::Unit('.' as u16))
         );
+    }
+
+    #[test]
+    fn boundary_before_caret_after_expansion() {
+        let r = |replace: &str| render(&snip(replace, vec![]), now(), &no_clip).unwrap();
+        // Plain trigger: the char left of the caret decides.
+        assert!(!r("Hello").boundary_before_caret(None));
+        assert!(r("Hello ").boundary_before_caret(None));
+        assert!(r("Hi,").boundary_before_caret(None));
+        assert!(r("line\n").boundary_before_caret(None));
+        assert!(r("line\r\n").boundary_before_caret(None));
+        // A re-typed separator is the last char typed.
+        assert!(r("Hello").boundary_before_caret(Some(' ')));
+        // With a marker the caret moves back: what is left of it counts.
+        assert!(!r("<b>$|$</b>").boundary_before_caret(Some(' ')));
+        assert!(!r("<b>$|$").boundary_before_caret(Some(' ')));
+        assert!(r("a $|$b").boundary_before_caret(None));
+        // Caret at the very start: for a word trigger the trigger began at
+        // a boundary; for a plain one, what came before is unknown.
+        assert!(r("$|$abc").boundary_before_caret(Some(' ')));
+        assert!(!r("$|$abc").boundary_before_caret(None));
+        assert!(!r("").boundary_before_caret(None));
     }
 
     #[test]
