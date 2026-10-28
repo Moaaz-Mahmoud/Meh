@@ -63,3 +63,41 @@ fn release_step_runs_only_on_tags() {
     }
     assert_eq!(releases, 1, "exactly one release step");
 }
+
+fn step_names() -> Vec<String> {
+    let doc: Value = serde_norway::from_str(WORKFLOW).expect("valid YAML");
+    doc["jobs"]["build"]["steps"]
+        .as_sequence()
+        .expect("steps")
+        .iter()
+        .filter_map(|s| s["name"].as_str().map(str::to_string))
+        .collect()
+}
+
+#[test]
+fn version_check_runs_before_test_and_build() {
+    // A tag that does not match Cargo.toml must fail before a full Windows
+    // build is spent on it.
+    let names = step_names();
+    let pos = |n: &str| {
+        names
+            .iter()
+            .position(|s| s == n)
+            .unwrap_or_else(|| panic!("no step named {n}: {names:?}"))
+    };
+    assert!(pos("Version") < pos("Test"), "{names:?}");
+    assert!(pos("Version") < pos("Build"), "{names:?}");
+}
+
+#[test]
+fn portable_zip_ships_the_license() {
+    let doc: Value = serde_norway::from_str(WORKFLOW).expect("valid YAML");
+    let zip = doc["jobs"]["build"]["steps"]
+        .as_sequence()
+        .expect("steps")
+        .iter()
+        .find(|s| s["name"].as_str() == Some("Portable zip"))
+        .expect("Portable zip step");
+    let run = zip["run"].as_str().expect("run");
+    assert!(run.contains("LICENSE"), "{run}");
+}

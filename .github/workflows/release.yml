@@ -21,6 +21,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # First, so a tag that does not match Cargo.toml fails before the
+      # test and build steps spend any time.
+      - name: Version
+        run: |
+          $line = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
+          if (-not $line) { throw "No version found in Cargo.toml" }
+          $version = $line.Matches[0].Groups[1].Value
+          Write-Host "Cargo.toml version: $version"
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and "v$version" -ne $env:GITHUB_REF_NAME) {
+            throw "Tag $env:GITHUB_REF_NAME does not match Cargo.toml version v$version"
+          }
+          "MEH_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Rust toolchain
         run: |
           rustup update stable --no-self-update
@@ -36,17 +49,6 @@ jobs:
       - name: Build
         run: cargo build --release --locked
 
-      - name: Version
-        run: |
-          $line = Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"' | Select-Object -First 1
-          if (-not $line) { throw "No version found in Cargo.toml" }
-          $version = $line.Matches[0].Groups[1].Value
-          Write-Host "Cargo.toml version: $version"
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and "v$version" -ne $env:GITHUB_REF_NAME) {
-            throw "Tag $env:GITHUB_REF_NAME does not match Cargo.toml version v$version"
-          }
-          "MEH_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
       - name: Installer
         run: |
           $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
@@ -58,7 +60,7 @@ jobs:
         run: |
           $stage = Join-Path $env:RUNNER_TEMP 'meh-zip'
           New-Item -ItemType Directory -Force -Path $stage, dist | Out-Null
-          Copy-Item target\release\meh.exe, README.md -Destination $stage
+          Copy-Item target\release\meh.exe, README.md, LICENSE -Destination $stage
           Copy-Item assets\base.sample.yml -Destination (Join-Path $stage 'base.sample.yml')
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath "dist\meh-$env:MEH_VERSION-windows-x64.zip" -Force
           Get-ChildItem dist
