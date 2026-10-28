@@ -19,7 +19,7 @@ Only one meh runs at a time. Starting it again does nothing.
 
 Snippets live in **`%APPDATA%\meh\match\`**. Paste that path into the Explorer address bar, or use **Open config folder** in the tray menu. On first run meh creates `base.yml` there with commented examples. meh never overwrites that file and never reads espanso's folder.
 
-Every `*.yml` and `*.yaml` file in that folder is loaded, in file-name order:
+Every `*.yml` and `*.yaml` file in that folder is loaded, in file-name order (ignoring case, as Explorer sorts them):
 
 ```yaml
 matches:

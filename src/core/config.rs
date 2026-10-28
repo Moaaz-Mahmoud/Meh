@@ -1,7 +1,8 @@
 //! Espanso-style YAML match files (a v1 subset).
 //!
 //! Rules (D-05, D-07, D-11):
-//! - Snippets come from `<config_dir>/match/*.yml|*.yaml`, read in file-name order.
+//! - Snippets come from `<config_dir>/match/*.yml|*.yaml`, read in file-name
+//!   order, ignoring case (`a.yml` before `B.yml`).
 //! - A YAML syntax or shape error fails the whole load ([`ConfigError`]), so the
 //!   caller can keep the last good set.
 //! - A match that uses a feature v1 lacks is skipped and reported as a
@@ -181,7 +182,7 @@ pub fn ensure_sample(match_dir: &Path) -> io::Result<bool> {
     }
 }
 
-/// Loads every match file in `dir`, in file-name order. All-or-nothing: the
+/// Loads every match file in `dir`, in case-insensitive file-name order. All-or-nothing: the
 /// first unreadable or unparsable file makes the whole load an error.
 /// A missing folder loads as zero snippets.
 pub fn load_dir(dir: &Path) -> Result<Loaded, ConfigError> {
@@ -205,17 +206,25 @@ pub fn load_dir(dir: &Path) -> Result<Loaded, ConfigError> {
         }
         let path = entry.path();
         if path.is_file() {
-            files.push(path);
+            files.push((name.to_string(), path));
         }
     }
-    files.sort();
+    files.sort_by(|(a, _), (b, _)| file_order(a, b));
 
     let mut loaded = Loaded::default();
-    for path in files {
+    for (_, path) in files {
         let src = fs::read_to_string(&path).map_err(|e| io_err(&path, e))?;
         parse_into(&mut loaded, &path, &src)?;
     }
     Ok(loaded)
+}
+
+/// Load order of match files: by name ignoring case, as Explorer shows
+/// them, then by exact name so the order is total.
+fn file_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
 }
 
 #[derive(Deserialize)]
@@ -754,6 +763,33 @@ matches:
         fs::write(p.join("sub.yml").join("z.yml"), m(":z")).unwrap();
         let l = load_dir(p).unwrap();
         assert_eq!(triggers(&l), [":a", ":b"]);
+    }
+
+    #[test]
+    fn load_dir_sorts_file_names_case_insensitively() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path();
+        fs::write(
+            p.join("a.yml"),
+            "matches:\n  - trigger: \":x\"\n    replace: \"from a\"\n",
+        )
+        .unwrap();
+        fs::write(
+            p.join("B.yml"),
+            "matches:\n  - trigger: \":x\"\n    replace: \"from B\"\n",
+        )
+        .unwrap();
+        let l = load_dir(p).unwrap();
+        assert_eq!(l.snippets.len(), 1);
+        assert_eq!(l.snippets[0].replace, "from a", "a.yml sorts before B.yml");
+        assert_eq!(l.skipped[0].file, p.join("B.yml"));
+    }
+
+    #[test]
+    fn file_order_key_breaks_ties_by_exact_name() {
+        let mut names = vec!["b.yml", "A.yml", "a.yml", "B.yml", "c.yml"];
+        names.sort_by(|x, y| file_order(x, y));
+        assert_eq!(names, ["A.yml", "a.yml", "B.yml", "b.yml", "c.yml"]);
     }
 
     #[test]
