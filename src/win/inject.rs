@@ -19,11 +19,29 @@ pub const INJECT_TAG: usize = 0x4D45_4800;
 /// How long to wait for the user to let go of modifier keys.
 pub const MODIFIER_WAIT: Duration = Duration::from_millis(500);
 
-static INJECTING: AtomicBool = AtomicBool::new(false);
+static BUSY: AtomicBool = AtomicBool::new(false);
 
-/// True while [`send`] is running.
-pub fn is_injecting() -> bool {
-    INJECTING.load(Ordering::Relaxed)
+/// True from the moment the worker sees a trigger until its replacement has
+/// been sent (rendering, the modifier wait and `SendInput`). Keys the user
+/// types meanwhile reach the app before our Backspaces, so the hook turns
+/// them into resets instead of buffering them (verifier defect 4).
+pub fn is_busy() -> bool {
+    BUSY.load(Ordering::Acquire)
+}
+
+/// Clears [`is_busy`] when dropped.
+pub struct BusyGuard(());
+
+/// Sets [`is_busy`] until the returned guard is dropped.
+pub fn mark_busy() -> BusyGuard {
+    BUSY.store(true, Ordering::Release);
+    BusyGuard(())
+}
+
+impl Drop for BusyGuard {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::Release);
+    }
 }
 
 /// Whether Shift, Ctrl, Alt or Win is physically held.
@@ -99,7 +117,6 @@ pub fn send(keys: &[Key]) -> bool {
     if inputs.is_empty() {
         return true;
     }
-    INJECTING.store(true, Ordering::Relaxed);
     // SAFETY: `inputs` is a valid slice of INPUT for the duration of the call
     // and cbsize is the size of one INPUT.
     let sent = unsafe {
@@ -109,6 +126,5 @@ pub fn send(keys: &[Key]) -> bool {
             std::mem::size_of::<INPUT>() as i32,
         )
     };
-    INJECTING.store(false, Ordering::Relaxed);
     sent as usize == inputs.len()
 }

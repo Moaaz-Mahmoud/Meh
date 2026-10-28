@@ -10,7 +10,7 @@
 //! combos reset. Enter and Tab never fire a trigger (D-15). Ctrl+Alt held
 //! together is AltGr and is translated normally. A dead key resets.
 
-use super::inject::INJECT_TAG;
+use super::inject::{INJECT_TAG, is_busy};
 use super::{Event, KeyInput};
 use crate::core::input::{Translation, Typed, Utf16Joiner, interpret_to_unicode, is_shortcut};
 use std::cell::Cell;
@@ -163,6 +163,12 @@ fn translate(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
     }
     if vk != VK_PACKET {
         interrupt_packet(out);
+    }
+    // The worker is about to erase and retype: this key reached the app
+    // before our Backspaces, so its text is unknown. Pass it on, but reset.
+    if is_busy() {
+        interrupt_packet(&mut |_| {});
+        return out(KeyInput::Reset);
     }
 
     let ctrl = down(VK_CONTROL);

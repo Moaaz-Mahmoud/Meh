@@ -110,6 +110,8 @@ impl Worker {
         let Some(snippet) = self.store.snippets().get(idx) else {
             return;
         };
+        // Until the keys are sent, the hook turns typed keys into resets.
+        let busy = inject::mark_busy();
         let now = chrono::Local::now().fixed_offset();
         match render(snippet, now, &clipboard::read_text) {
             Ok(expansion) => {
@@ -129,7 +131,9 @@ impl Worker {
                 });
             }
         }
-        // Whatever the user types next starts fresh.
+        drop(busy);
+        // Whatever the user types next starts fresh. Keys typed while busy
+        // arrive as resets, so they cannot form a stale match.
         self.matcher.reset();
     }
 }
