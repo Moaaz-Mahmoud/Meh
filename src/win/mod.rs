@@ -35,8 +35,8 @@ pub enum Event {
     Key(KeyInput),
     /// Reload the match files (watcher or tray menu).
     Reload,
-    /// Tray Enable/Disable.
-    SetEnabled(bool),
+    /// The tray "Enabled" item changed [`hook::is_enabled`].
+    EnabledChanged,
     /// The match folder could not be watched (D-10); list it as a problem.
     WatchFailed(String),
     Quit,

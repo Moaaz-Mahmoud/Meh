@@ -9,6 +9,7 @@
 //!
 //! Time is passed in, so all of this is testable without sleeping.
 
+use crate::core::APP_NAME;
 use crate::core::config::{ConfigError, Loaded, Snippet, is_match_file_name};
 use crate::core::problems::{Problem, Problems};
 use std::path::Path;
@@ -64,7 +65,7 @@ pub fn notice(outcome: &Outcome, problems: &Problems) -> Option<Notice> {
                 .find(|p| matches!(p, Problem::ConfigError { .. }))
                 .map(|p| p.to_string());
             Some(Notice {
-                title: "Meh - config error".to_string(),
+                title: format!("{APP_NAME} - config error"),
                 body: format!(
                     "Still using the previous {}. {}",
                     plural(kept, "snippet"),
@@ -74,7 +75,7 @@ pub fn notice(outcome: &Outcome, problems: &Problems) -> Option<Notice> {
             })
         }
         Outcome::Applied { skipped, .. } if skipped > 0 => Some(Notice {
-            title: format!("Meh - {} skipped", plural(skipped, "snippet")),
+            title: format!("{APP_NAME} - {} skipped", plural(skipped, "snippet")),
             body: "See \"Show problems\u{2026}\" in the tray menu.".to_string(),
             is_error: false,
         }),

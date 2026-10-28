@@ -46,10 +46,15 @@ thread_local! {
     static PACKET: Cell<Utf16Joiner> = const { Cell::new(Utf16Joiner::new()) };
 }
 
-/// Turns translation on or off (tray Enable/Disable). When off, the procs
-/// pass every event straight on.
+/// Turns translation on or off (tray "Enabled"). When off, the procs pass
+/// every event straight on. This is the only copy of the enabled state: the
+/// worker reads it too, and the tray check mark mirrors it.
 pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
+}
+
+pub fn is_enabled() -> bool {
+    ENABLED.load(Ordering::Relaxed)
 }
 
 /// Both installed hooks. Dropping this removes them. Must be created and

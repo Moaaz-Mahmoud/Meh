@@ -5,6 +5,7 @@
 //! names from the user's own config, plus an OS error message for the file
 //! watcher. None carries typed text or buffer contents.
 
+use crate::core::APP_NAME;
 use crate::core::config::{ConfigError, SkipReason, Skipped, Snippet};
 use crate::core::expand::ExpandError;
 use std::fmt;
@@ -192,9 +193,9 @@ impl Problems {
     /// Tray tooltip: "Meh" or "Meh - N problem(s)".
     pub fn tooltip(&self) -> String {
         match self.len() {
-            0 => "Meh".to_string(),
-            1 => "Meh - 1 problem".to_string(),
-            n => format!("Meh - {n} problems"),
+            0 => APP_NAME.to_string(),
+            1 => format!("{APP_NAME} - 1 problem"),
+            n => format!("{APP_NAME} - {n} problems"),
         }
     }
 

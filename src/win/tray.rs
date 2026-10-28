@@ -7,6 +7,7 @@
 //! (`with_guid`), and balloons and tooltips are sent with `Shell_NotifyIconW`
 //! addressed by that GUID (`NIF_GUID`), see `ui.rs`.
 
+use crate::core::APP_NAME;
 use crate::core::ident::tray_guid;
 use crate::core::reload::Notice;
 use crate::icon;
@@ -61,7 +62,7 @@ impl Tray {
             .map(|p| tray_guid(&p.to_string_lossy()))
             .unwrap_or(FALLBACK_GUID);
         ui::delete_stale_icon(guid);
-        let base_tip = "Meh".to_string();
+        let base_tip = APP_NAME.to_string();
         let icon = TrayIconBuilder::new()
             .with_menu(Box::new(menu))
             .with_icon(Icon::from_rgba(icon::rgba(32), 32, 32)?)

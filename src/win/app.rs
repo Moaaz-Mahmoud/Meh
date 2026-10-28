@@ -6,7 +6,7 @@
 //! (see `worker.rs`). meh writes nothing to disk except the first-run
 //! sample config (D-12).
 
-use crate::core::config;
+use crate::core::{APP_NAME, config};
 use crate::win::tray::{Action, Tray};
 use crate::win::ui::{self, BoxKind};
 use crate::win::worker::{self, SharedProblems, UiUpdate, Worker};
@@ -14,7 +14,6 @@ use crate::win::{Event, hook, single_instance, watch};
 use std::sync::mpsc;
 use std::thread;
 
-const TITLE: &str = "Meh";
 const TICK_MS: u32 = 100;
 
 pub fn run() {
@@ -33,7 +32,7 @@ pub fn run() {
         Ok(t) => t,
         Err(e) => {
             ui::message_box(
-                TITLE,
+                APP_NAME,
                 &format!("meh could not create its tray icon and will exit.\n\n{e}"),
                 BoxKind::Error,
             );
@@ -58,7 +57,7 @@ pub fn run() {
         Ok(h) => h,
         Err(e) => {
             ui::message_box(
-                TITLE,
+                APP_NAME,
                 &format!("meh could not start.\n\n{e}"),
                 BoxKind::Error,
             );
@@ -70,7 +69,7 @@ pub fn run() {
         Ok(h) => h,
         Err(e) => {
             ui::message_box(
-                TITLE,
+                APP_NAME,
                 &format!("meh could not install its keyboard hook and will exit.\n\n{e}"),
                 BoxKind::Error,
             );
@@ -110,7 +109,7 @@ pub fn run() {
             match action {
                 Action::SetEnabled(on) => {
                     hook::set_enabled(on);
-                    let _ = tx.send(Event::SetEnabled(on));
+                    let _ = tx.send(Event::EnabledChanged);
                     tray.refresh_tip();
                 }
                 Action::Reload => {
@@ -119,14 +118,15 @@ pub fn run() {
                 // Runs on its own thread: never block the hook thread.
                 Action::OpenFolder => ui::open_folder_in_background(
                     match_dir.clone(),
-                    TITLE,
+                    APP_NAME,
                     "Could not open the config folder (%APPDATA%\\meh\\match).".to_string(),
                 ),
                 Action::ShowProblems => {
                     let report = worker::lock(&problems).report();
                     // Modal, on this thread: fine for the hooks, see
                     // `ui::message_box`.
-                    ui::message_box("Meh - problems", &report, BoxKind::Info);
+                    let title = format!("{APP_NAME} - problems");
+                    ui::message_box(&title, &report, BoxKind::Info);
                 }
                 Action::Quit => ui::quit(),
             }

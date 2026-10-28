@@ -1,7 +1,8 @@
 //! The worker thread: owns the matcher, the snippet store and the problems
 //! list, and does all `SendInput` calls. The hook only feeds it keys.
 
-use super::{Event, KeyInput, clipboard, inject};
+use super::{Event, KeyInput, clipboard, hook, inject};
+use crate::core::APP_NAME;
 use crate::core::config::{ConfigError, Loaded, load_dir};
 use crate::core::expand::{plan_injection, render};
 use crate::core::matcher::Matcher;
@@ -29,7 +30,6 @@ pub struct Worker {
     store: Store,
     matcher: Matcher,
     problems: SharedProblems,
-    enabled: bool,
     ui: Box<dyn FnMut(UiUpdate) + Send>,
 }
 
@@ -46,7 +46,6 @@ impl Worker {
             store: Store::new(),
             matcher: Matcher::new(&[]),
             problems,
-            enabled: true,
             ui,
         }
     }
@@ -58,10 +57,9 @@ impl Worker {
             match ev {
                 Event::Key(k) => self.key(k),
                 Event::Reload => self.reload(),
-                Event::SetEnabled(on) => {
-                    self.enabled = on;
-                    self.matcher.reset();
-                }
+                // The hook's flag is the one source of truth; keys already
+                // queued are dropped in `key`, and the buffer starts fresh.
+                Event::EnabledChanged => self.matcher.reset(),
                 Event::WatchFailed(error) => self.watch_failed(error),
                 Event::Quit => return,
             }
@@ -101,7 +99,7 @@ impl Worker {
             (problems.tooltip(), text)
         };
         let notice = Notice {
-            title: "Meh - live reload is off".to_string(),
+            title: format!("{APP_NAME} - live reload is off"),
             body: text,
             is_error: false,
         };
@@ -112,7 +110,7 @@ impl Worker {
     }
 
     fn key(&mut self, k: KeyInput) {
-        if !self.enabled {
+        if !hook::is_enabled() {
             return;
         }
         match k {
