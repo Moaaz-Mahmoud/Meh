@@ -4,6 +4,7 @@
 pub mod config;
 pub mod expand;
 pub mod ident;
+pub mod input;
 pub mod matcher;
 pub mod problems;
 pub mod reload;

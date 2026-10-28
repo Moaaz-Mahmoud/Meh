@@ -12,6 +12,8 @@
 
 use super::inject::INJECT_TAG;
 use super::{Event, KeyInput};
+use crate::core::input::{Translation, Typed, Utf16Joiner, interpret_to_unicode, is_shortcut};
+use std::cell::Cell;
 use std::io;
 use std::ptr::null_mut;
 use std::sync::OnceLock;
@@ -37,6 +39,12 @@ const TOUNICODE_NO_STATE_CHANGE: u32 = 0x4;
 
 static TX: OnceLock<Sender<Event>> = OnceLock::new();
 static ENABLED: AtomicBool = AtomicBool::new(true);
+
+thread_local! {
+    /// A high surrogate from a `VK_PACKET` event, waiting for its low half
+    /// (emoji panel). Only the hook thread touches it.
+    static PACKET: Cell<Utf16Joiner> = const { Cell::new(Utf16Joiner::new()) };
+}
 
 /// Turns translation on or off (tray Enable/Disable). When off, the procs
 /// pass every event straight on.
@@ -92,6 +100,23 @@ fn emit(input: KeyInput) {
     }
 }
 
+fn typed(out: &mut impl FnMut(KeyInput), t: Typed) {
+    out(match t {
+        Typed::Char(c) => KeyInput::Char(c),
+        Typed::Reset => KeyInput::Reset,
+    })
+}
+
+/// A non-packet event arrived: a high surrogate still waiting for its low
+/// half will never be completed, so drop it and reset.
+fn interrupt_packet(out: &mut impl FnMut(KeyInput)) {
+    let mut j = PACKET.get();
+    if j.interrupt() {
+        PACKET.set(j);
+        out(KeyInput::Reset);
+    }
+}
+
 unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code == HC_ACTION as i32 && ENABLED.load(Ordering::Relaxed) {
         // SAFETY: for HC_ACTION, lparam points to a KBDLLHOOKSTRUCT.
@@ -110,6 +135,8 @@ unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) 
     if code == HC_ACTION as i32 && ENABLED.load(Ordering::Relaxed) {
         match wparam as u32 {
             WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_XBUTTONDOWN => {
+                // Drops a waiting surrogate half; this Reset covers it.
+                interrupt_packet(&mut |_| {});
                 emit(KeyInput::Reset)
             }
             _ => {}
@@ -134,13 +161,16 @@ fn translate(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
         VK_LWIN | VK_RWIN => return out(KeyInput::Reset),
         _ => {}
     }
+    if vk != VK_PACKET {
+        interrupt_packet(out);
+    }
 
     let ctrl = down(VK_CONTROL);
     let alt = down(VK_MENU);
     let win = down(VK_LWIN) || down(VK_RWIN);
     // Ctrl+Alt together is AltGr: keep translating. Ctrl or Alt alone, or
     // any Win combo, is a shortcut that may move the caret.
-    if win || ctrl != alt {
+    if is_shortcut(ctrl, alt, win) {
         return out(KeyInput::Reset);
     }
 
@@ -151,18 +181,22 @@ fn translate(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
         VK_RETURN | VK_TAB => out(KeyInput::Reset),
         VK_LEFT | VK_RIGHT | VK_UP | VK_DOWN | VK_HOME | VK_END | VK_PRIOR | VK_NEXT
         | VK_ESCAPE | VK_PROCESSKEY => out(KeyInput::Reset),
-        // Unicode input injected by another tool (on-screen keyboard, ...):
-        // the scan code holds one UTF-16 unit.
-        VK_PACKET => match char::from_u32(kb.scanCode & 0xFFFF) {
-            Some(c) if !c.is_control() => out(KeyInput::Char(c)),
-            _ => out(KeyInput::Reset),
-        },
-        _ => to_unicode(kb, out),
+        // Unicode input injected by another tool (emoji panel, on-screen
+        // keyboard, ...): the scan code holds one UTF-16 unit, so an emoji
+        // comes as two events and is joined here.
+        VK_PACKET => {
+            let mut j = PACKET.get();
+            j.push((kb.scanCode & 0xFFFF) as u16, &mut |t| typed(out, t));
+            PACKET.set(j);
+        }
+        // Here Ctrl and Alt are either both held (AltGr) or both up.
+        _ => to_unicode(kb, ctrl && alt, out),
     }
 }
 
 /// Translates a character key with the foreground window's layout.
-fn to_unicode(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
+/// `ctrl_and_alt`: Ctrl+Alt (AltGr) is held.
+fn to_unicode(kb: &KBDLLHOOKSTRUCT, ctrl_and_alt: bool, out: &mut impl FnMut(KeyInput)) {
     // Built from the async state: GetKeyboardState on this thread would be
     // stale, because this thread never receives keyboard input.
     let mut state = [0u8; 256];
@@ -181,8 +215,16 @@ fn to_unicode(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
             state[vk as usize] = 0x80;
         }
     }
+    // CapsLock: the low-order bit of GetKeyState is the toggle state.
+    // Caveat (needs a Windows test, verifier defect 10): GetKeyState is
+    // per-thread input state, and this thread never receives keyboard
+    // messages, so the toggle could in theory be stale, as GetKeyboardState
+    // is above. In practice the toggle is commonly reported correctly from
+    // LL hooks. If a test with CapsLock on shows the wrong case, track the
+    // toggle from VK_CAPITAL key-downs here instead.
     // SAFETY: plain query, no pointers.
-    if unsafe { GetKeyState(VK_CAPITAL as i32) } & 1 != 0 {
+    let caps_on = (unsafe { GetKeyState(VK_CAPITAL as i32) } & 0x0001) != 0;
+    if caps_on {
         state[VK_CAPITAL as usize] = 0x01;
     }
 
@@ -201,16 +243,21 @@ fn to_unicode(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
             layout,
         )
     };
-    if n < 0 {
-        // Dead key: what comes next is composed by the app; we cannot follow.
-        return out(KeyInput::Reset);
-    }
-    let n = (n as usize).min(buf.len());
-    for c in char::decode_utf16(buf[..n].iter().copied()) {
-        match c {
-            Ok(c) if !c.is_control() => out(KeyInput::Char(c)),
-            Ok(_) => {}
-            Err(_) => return out(KeyInput::Reset),
+    // Dead keys and Ctrl+Alt shortcuts that type nothing reset (see
+    // `interpret_to_unicode`).
+    match interpret_to_unicode(n, ctrl_and_alt, buf.len()) {
+        Translation::Reset => out(KeyInput::Reset),
+        Translation::Nothing => {}
+        Translation::Units(n) => {
+            // A full surrogate pair arrives in one call; a dangling half
+            // resets.
+            let mut j = Utf16Joiner::new();
+            for &u in &buf[..n] {
+                j.push(u, &mut |t| typed(out, t));
+            }
+            if j.interrupt() {
+                out(KeyInput::Reset);
+            }
         }
     }
 }
