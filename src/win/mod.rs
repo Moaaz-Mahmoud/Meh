@@ -5,6 +5,8 @@
 //! `RUSTFLAGS="--cfg meh_typecheck" cargo check --lib`. `tray` and `app` use
 //! `tray-icon`, a Windows-only dependency, and are `cfg(windows)` only.
 
+use crate::core::problems::Problem;
+
 #[cfg(windows)]
 pub mod app;
 pub mod clipboard;
@@ -37,8 +39,10 @@ pub enum Event {
     Reload,
     /// The tray "Enabled" item changed [`hook::is_enabled`].
     EnabledChanged,
-    /// The match folder could not be watched (D-10); list it as a problem.
-    WatchFailed(String),
+    /// A problem no reload clears: the match folder could not be watched
+    /// (D-10) or created (D-18). Listed until meh restarts; the first one
+    /// raises a notification.
+    Standing(Problem),
     Quit,
 }
 

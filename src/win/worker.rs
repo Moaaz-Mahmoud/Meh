@@ -2,12 +2,11 @@
 //! list, and does all `SendInput` calls. The hook only feeds it keys.
 
 use super::{Event, KeyInput, clipboard, hook, inject};
-use crate::core::APP_NAME;
 use crate::core::config::{ConfigError, Loaded, load_dir};
 use crate::core::expand::{plan_injection, render};
 use crate::core::matcher::Matcher;
 use crate::core::problems::{Problem, Problems};
-use crate::core::reload::{Notice, Store, notice};
+use crate::core::reload::{Notice, Store, add_standing, notice};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -72,7 +71,7 @@ impl Worker {
                 // The hook's flag is the one source of truth; keys already
                 // queued are dropped in `key`, and the buffer starts fresh.
                 Event::EnabledChanged => self.matcher.reset(),
-                Event::WatchFailed(error) => self.watch_failed(error),
+                Event::Standing(problem) => self.standing(problem),
                 Event::Quit => return,
             }
         }
@@ -81,11 +80,9 @@ impl Worker {
     fn reload(&mut self) {
         let result = match &self.match_dir {
             Some(dir) => load_dir(dir),
-            None => Err(ConfigError {
-                file: PathBuf::from("%APPDATA%"),
-                line: None,
-                msg: "could not find the config folder".to_string(),
-            }),
+            // No config folder: zero snippets. `app.rs` lists that as a
+            // standing problem, so every reload need not repeat it.
+            None => Ok(Loaded::default()),
         };
         self.apply(result);
     }
@@ -100,25 +97,15 @@ impl Worker {
         (self.ui)(UiUpdate::Problems { tooltip, notice });
     }
 
-    /// Lists "live reload unavailable" until meh restarts, and tells the
-    /// user once with a notification.
-    fn watch_failed(&mut self, error: String) {
-        let (tooltip, text) = {
+    /// Lists a problem until meh restarts (live reload unavailable, no
+    /// config folder), and tells the user once with a notification.
+    fn standing(&mut self, problem: Problem) {
+        let (tooltip, notice) = {
             let mut problems = lock(&self.problems);
-            let p = Problem::LiveReloadUnavailable { error };
-            let text = p.to_string();
-            problems.set_standing(p);
-            (problems.tooltip(), text)
+            let notice = add_standing(&mut problems, problem);
+            (problems.tooltip(), notice)
         };
-        let notice = Notice {
-            title: format!("{APP_NAME} - live reload is off"),
-            body: text,
-            is_error: false,
-        };
-        (self.ui)(UiUpdate::Problems {
-            tooltip,
-            notice: Some(notice),
-        });
+        (self.ui)(UiUpdate::Problems { tooltip, notice });
     }
 
     fn key(&mut self, k: KeyInput, rx: &Receiver<Event>) {

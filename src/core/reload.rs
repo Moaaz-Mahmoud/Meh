@@ -83,6 +83,31 @@ pub fn notice(outcome: &Outcome, problems: &Problems) -> Option<Notice> {
     }
 }
 
+/// The notification for a standing problem ([`Problems::set_standing`]):
+/// one that no reload clears, so the user is told once, when it is found.
+pub fn standing_notice(problem: &Problem) -> Notice {
+    let (title, is_error) = match problem {
+        Problem::LiveReloadUnavailable { .. } => ("live reload is off", false),
+        Problem::ConfigFolder { .. } => ("no config folder", true),
+        _ => ("problem", true),
+    };
+    Notice {
+        title: format!("{APP_NAME} - {title}"),
+        body: problem.to_string(),
+        is_error,
+    }
+}
+
+/// Lists a standing problem and returns the notification to show, if any.
+/// Only the first standing problem notifies: a later one is usually a
+/// consequence (no config folder, so it cannot be watched either), and its
+/// balloon would replace the one that names the cause.
+pub fn add_standing(problems: &mut Problems, problem: Problem) -> Option<Notice> {
+    let first = problems.standing_len() == 0;
+    let notice = standing_notice(&problem);
+    (problems.set_standing(problem) && first).then_some(notice)
+}
+
 /// The live snippet set.
 #[derive(Debug, Default)]
 pub struct Store {
@@ -390,6 +415,53 @@ mod tests {
         let out = store.apply(good(&[":a"]), &mut problems);
         assert_eq!(notice(&out, &problems), None);
         assert_eq!(out.should_notify(), notice(&out, &problems).is_some());
+    }
+
+    #[test]
+    fn standing_notices_name_the_problem() {
+        let live = standing_notice(&Problem::LiveReloadUnavailable {
+            error: "Access is denied.".into(),
+        });
+        assert_eq!(live.title, "Meh - live reload is off");
+        assert!(!live.is_error);
+        assert!(
+            live.body
+                .starts_with("live reload unavailable: Access is denied.")
+        );
+
+        let folder = standing_notice(&Problem::ConfigFolder {
+            path: Some(PathBuf::from("C:/x/meh/match")),
+            msg: "Access is denied.".into(),
+        });
+        assert_eq!(folder.title, "Meh - no config folder");
+        assert!(folder.is_error);
+        assert!(
+            folder.body.contains("C:/x/meh/match") && folder.body.contains("Access is denied."),
+            "{}",
+            folder.body
+        );
+        let unknown = standing_notice(&Problem::config_folder_unknown());
+        assert!(unknown.body.contains("%APPDATA%"), "{}", unknown.body);
+    }
+
+    #[test]
+    fn add_standing_notifies_only_for_the_first_new_one() {
+        let mut problems = Problems::default();
+        let folder = Problem::ConfigFolder {
+            path: Some(PathBuf::from("C:/x/meh/match")),
+            msg: "Access is denied.".into(),
+        };
+        let n = add_standing(&mut problems, folder.clone()).expect("first one notifies");
+        assert_eq!(n.title, "Meh - no config folder");
+        // The watcher then fails on the missing folder: listed, but its
+        // balloon would hide the folder one.
+        let watch = Problem::LiveReloadUnavailable {
+            error: "not found".into(),
+        };
+        assert_eq!(add_standing(&mut problems, watch), None);
+        assert_eq!(add_standing(&mut problems, folder), None, "already listed");
+        assert_eq!(problems.len(), 2);
+        assert_eq!(problems.summary().live_reload, 1);
     }
 
     #[test]

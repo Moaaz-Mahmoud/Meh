@@ -6,6 +6,7 @@
 //! (see `worker.rs`). meh writes nothing to disk except the first-run
 //! sample config (D-12).
 
+use crate::core::problems::Problem;
 use crate::core::{APP_NAME, config};
 use crate::win::tray::{Action, Tray};
 use crate::win::ui::{self, BoxKind};
@@ -23,10 +24,18 @@ pub fn run() {
     };
 
     let match_dir = config::config_dir().map(|d| config::match_dir(&d));
-    if let Some(dir) = &match_dir {
-        // Never overwrites (D-05). On failure the load below reports it.
-        let _ = config::ensure_sample(dir);
-    }
+    // Never overwrites (D-05). A failure is listed under "Show problems…"
+    // and notified once the tray is up (D-18); it is sent to the worker
+    // below, before the watcher can fail on the same missing folder.
+    let folder_problem = match &match_dir {
+        Some(dir) => config::ensure_sample(dir)
+            .err()
+            .map(|e| Problem::ConfigFolder {
+                path: Some(dir.clone()),
+                msg: e.to_string(),
+            }),
+        None => Some(Problem::config_folder_unknown()),
+    };
 
     let mut tray = match Tray::new() {
         Ok(t) => t,
@@ -65,6 +74,10 @@ pub fn run() {
         }
     };
 
+    if let Some(p) = folder_problem {
+        let _ = tx.send(Event::Standing(p));
+    }
+
     let hooks = match hook::install(tx.clone()) {
         Ok(h) => h,
         Err(e) => {
@@ -87,10 +100,12 @@ pub fn run() {
     {
         Some(Ok(w)) => Some(w),
         Some(Err(e)) => {
-            let _ = tx.send(Event::WatchFailed(e.to_string()));
+            let _ = tx.send(Event::Standing(Problem::LiveReloadUnavailable {
+                error: e.to_string(),
+            }));
             None
         }
-        // No config folder: the load already reports that.
+        // No config folder: already listed above.
         None => None,
     };
 

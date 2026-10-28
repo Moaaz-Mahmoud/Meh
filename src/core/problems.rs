@@ -2,8 +2,9 @@
 //!
 //! Every variant is built from config- or expansion-derived values: file
 //! paths, line numbers, YAML parser messages, trigger names and variable
-//! names from the user's own config, plus an OS error message for the file
-//! watcher. None carries typed text or buffer contents.
+//! names from the user's own config, plus OS error messages for the file
+//! watcher and the config folder. None carries typed text or buffer
+//! contents.
 
 use crate::core::APP_NAME;
 use crate::core::config::{ConfigError, SkipReason, Skipped, Snippet};
@@ -38,6 +39,10 @@ pub enum Problem {
     /// reload (D-10); the tray "Reload snippets" still works. `error` is the
     /// watcher's (OS) error message.
     LiveReloadUnavailable { error: String },
+    /// The config folder could not be created at startup (D-18), or
+    /// `%APPDATA%` could not be found (`path` is `None`). `msg` is the OS
+    /// error message.
+    ConfigFolder { path: Option<PathBuf>, msg: String },
 }
 
 impl Problem {
@@ -46,6 +51,14 @@ impl Problem {
         Problem::ExpandFailed {
             trigger: snippet.trigger.clone(),
             reason,
+        }
+    }
+
+    /// `%APPDATA%` (the config folder's parent) could not be found.
+    pub fn config_folder_unknown() -> Self {
+        Problem::ConfigFolder {
+            path: None,
+            msg: "%APPDATA% is not set".to_string(),
         }
     }
 }
@@ -101,6 +114,18 @@ impl fmt::Display for Problem {
                     "live reload unavailable: {error} (use \"Reload snippets\" after saving)"
                 )
             }
+            Problem::ConfigFolder {
+                path: Some(path),
+                msg,
+            } => write!(
+                f,
+                "Could not create the config folder {}: {msg}",
+                path.display()
+            ),
+            Problem::ConfigFolder { path: None, msg } => write!(
+                f,
+                "Could not find the config folder ({msg}), so no snippets are loaded"
+            ),
         }
     }
 }
@@ -112,17 +137,22 @@ pub struct Summary {
     pub skipped: usize,
     pub expand_failed: usize,
     pub live_reload: usize,
+    pub config_folder: usize,
 }
 
 impl Summary {
     pub fn total(&self) -> usize {
-        self.config_errors + self.skipped + self.expand_failed + self.live_reload
+        self.config_errors
+            + self.skipped
+            + self.expand_failed
+            + self.live_reload
+            + self.config_folder
     }
 }
 
 /// The current problems. Replaced on every reload; expansion failures are
-/// added as they happen. Standing problems (the file watcher) are listed
-/// first and survive reloads.
+/// added as they happen. Standing problems (the file watcher, the config
+/// folder) are listed first and survive reloads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Problems {
     standing: Vec<Problem>,
@@ -137,12 +167,19 @@ impl Problems {
     }
 
     /// Adds a problem that no reload clears, unless one of the same kind is
-    /// already there.
-    pub fn set_standing(&mut self, p: Problem) {
+    /// already there. Returns whether it was added.
+    pub fn set_standing(&mut self, p: Problem) -> bool {
         let same_kind = |q: &Problem| std::mem::discriminant(q) == std::mem::discriminant(&p);
-        if !self.standing.iter().any(same_kind) {
-            self.standing.push(p);
+        if self.standing.iter().any(same_kind) {
+            return false;
         }
+        self.standing.push(p);
+        true
+    }
+
+    /// The number of standing problems.
+    pub fn standing_len(&self) -> usize {
+        self.standing.len()
     }
 
     /// Adds one problem unless an identical one is already listed.
@@ -185,6 +222,7 @@ impl Problems {
                 Problem::SkippedSnippet { .. } => s.skipped += 1,
                 Problem::ExpandFailed { .. } => s.expand_failed += 1,
                 Problem::LiveReloadUnavailable { .. } => s.live_reload += 1,
+                Problem::ConfigFolder { .. } => s.config_folder += 1,
             }
         }
         s
@@ -290,6 +328,10 @@ mod tests {
                 Problem::LiveReloadUnavailable { error } => {
                     let _: &String = error;
                 }
+                // The config folder path and an OS error message.
+                Problem::ConfigFolder { path, msg } => {
+                    let _: (&Option<PathBuf>, &String) = (path, msg);
+                }
             }
         }
 
@@ -340,7 +382,8 @@ mod tests {
                 config_errors: 1,
                 skipped: 2,
                 expand_failed: 1,
-                live_reload: 0
+                live_reload: 0,
+                config_folder: 0,
             }
         );
         assert_eq!(p.tooltip(), "Meh - 4 problems");
@@ -375,6 +418,46 @@ mod tests {
         // Setting it again does not duplicate it.
         p.set_standing(Problem::LiveReloadUnavailable { error: "x".into() });
         assert_eq!(p.len(), 1);
+    }
+
+    #[test]
+    fn config_folder_problem_names_the_folder_and_survives_reloads() {
+        let mut p = Problems::default();
+        p.set_standing(Problem::ConfigFolder {
+            path: Some(PathBuf::from(r"C:\Users\me\AppData\Roaming\meh\match")),
+            msg: "Access is denied. (os error 5)".into(),
+        });
+        p.set_standing(Problem::LiveReloadUnavailable {
+            error: "watch failed".into(),
+        });
+        p.replace(vec![skipped(":r")]);
+        p.replace(vec![]);
+        assert_eq!(p.len(), 2);
+        assert_eq!(p.summary().config_folder, 1);
+        assert_eq!(p.summary().total(), 2);
+        assert_eq!(p.tooltip(), "Meh - 2 problems");
+        let report = p.report();
+        assert!(
+            report.starts_with(
+                "Could not create the config folder C:\\Users\\me\\AppData\\Roaming\\meh\\match: Access is denied. (os error 5)"
+            ),
+            "{report}"
+        );
+        // Setting it again does not duplicate it.
+        p.set_standing(Problem::ConfigFolder {
+            path: None,
+            msg: "x".into(),
+        });
+        assert_eq!(p.len(), 2);
+    }
+
+    #[test]
+    fn config_folder_problem_without_a_folder() {
+        let p = Problem::config_folder_unknown();
+        assert_eq!(
+            p.to_string(),
+            "Could not find the config folder (%APPDATA% is not set), so no snippets are loaded"
+        );
     }
 
     #[test]
