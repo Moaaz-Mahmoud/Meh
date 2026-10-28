@@ -6,6 +6,7 @@
 //!   The template is split at the marker *before* substitution, so a marker
 //!   inside clipboard text is just text.
 //! - Variables are evaluated only when the text uses them, at most once each.
+//! - A tab in a variable's value is typed as a space (D-15: no Tab key).
 
 use crate::core::config::{Snippet, VarKind};
 use chrono::{DateTime, Datelike, FixedOffset, TimeDelta};
@@ -154,6 +155,9 @@ impl Ctx<'_> {
                 })?
             }
         };
+        // D-15: no tab is ever typed. A clipboard copied from a spreadsheet
+        // holds tabs (and `%t` in a date format is rejected at load).
+        let value = value.replace('\t', " ");
         self.cache.insert(name.to_string(), value.clone());
         Ok(Some(value))
     }
@@ -173,15 +177,14 @@ pub enum Key {
     Unit(u16),
     /// Return key, for a line break (`\n`, `\r\n` or `\r`).
     Enter,
-    /// Tab key. Not reachable from config: a `replace` with a tab is not
-    /// loaded (D-15).
-    Tab,
     /// Left arrow.
     Left,
 }
 
-/// Turns text into key actions: line breaks become [`Key::Enter`], tabs
-/// [`Key::Tab`], everything else UTF-16 units (astral chars as surrogate pairs).
+/// Turns text into key actions: line breaks become [`Key::Enter`], everything
+/// else UTF-16 units (astral chars as surrogate pairs). A tab is typed as a
+/// space: the Tab key would move focus mid-expansion (D-15). Config cannot
+/// hold one, but a variable's value (clipboard text) can.
 pub fn plan_keys(text: &str) -> Vec<Key> {
     let mut keys = Vec::with_capacity(text.len());
     let mut chars = text.chars().peekable();
@@ -192,7 +195,7 @@ pub fn plan_keys(text: &str) -> Vec<Key> {
                 keys.push(Key::Enter);
             }
             '\n' => keys.push(Key::Enter),
-            '\t' => keys.push(Key::Tab),
+            '\t' => keys.push(Key::Unit(' ' as u16)),
             _ => {
                 let mut buf = [0u16; 2];
                 keys.extend(c.encode_utf16(&mut buf).iter().map(|&u| Key::Unit(u)));
@@ -438,8 +441,25 @@ mod tests {
     }
 
     #[test]
-    fn plan_keys_tab_is_vk_tab() {
-        assert_eq!(plan_keys("\tx"), [Key::Tab, Key::Unit('x' as u16)]);
+    fn plan_keys_never_types_tab() {
+        // D-15: no Tab key is ever sent; a stray tab is typed as a space.
+        assert_eq!(
+            plan_keys("\tx"),
+            [Key::Unit(' ' as u16), Key::Unit('x' as u16)]
+        );
+    }
+
+    #[test]
+    fn tab_in_variable_value_becomes_space() {
+        // Clipboard text copied from a spreadsheet holds tabs; typing Tab
+        // would move focus mid-expansion (D-15).
+        let s = snip("[{{c}}]$|$", vec![clip("c")]);
+        let e = render(&s, now(), &|| Some("a\tb\t".into())).unwrap();
+        assert_eq!(e.text, "[a b ]");
+        assert_eq!(e.left, 0);
+        // A date format is checked at load, but rendering is safe anyway.
+        let s = snip("{{d}}", vec![date("d", Some("%d%t%m"), 0)]);
+        assert_eq!(text(&s), "28 10");
     }
 
     #[test]

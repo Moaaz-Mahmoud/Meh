@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_EXTENDEDKEY,
     KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC, MapVirtualKeyW, SendInput, VK_BACK,
-    VK_CONTROL, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN, VK_SHIFT, VK_TAB,
+    VK_CONTROL, VK_LEFT, VK_LWIN, VK_MENU, VK_RETURN, VK_RWIN, VK_SHIFT,
 };
 
 /// `dwExtraInfo` marker on every event meh injects ("MEH\0").
@@ -102,7 +102,6 @@ fn build(keys: &[Key]) -> Vec<INPUT> {
             Key::Back => push_vk(&mut out, VK_BACK, false),
             Key::Unit(u) => push_unit(&mut out, u),
             Key::Enter => push_vk(&mut out, VK_RETURN, false),
-            Key::Tab => push_vk(&mut out, VK_TAB, false),
             Key::Left => push_vk(&mut out, VK_LEFT, true),
         }
     }

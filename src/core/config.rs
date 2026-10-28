@@ -73,6 +73,8 @@ pub enum SkipReason {
     TriggerHasTabOrNewline,
     /// The replacement contains a tab (D-15).
     ReplaceHasTab,
+    /// A date variable's `format` would type a tab (a tab or `%t`, D-15).
+    DateFormatHasTab,
     /// A known key has the wrong kind of value (the key name is given).
     BadValue(&'static str),
     /// A text key holds an unquoted number or boolean (`trigger: 1.10`).
@@ -96,6 +98,9 @@ impl fmt::Display for SkipReason {
                 f.write_str("triggers cannot contain a tab or a line break")
             }
             SkipReason::ReplaceHasTab => f.write_str("the replacement cannot contain a tab"),
+            SkipReason::DateFormatHasTab => {
+                f.write_str("a date `format` cannot contain a tab or `%t`")
+            }
             SkipReason::BadValue(k) => write!(f, "invalid value for `{k}`"),
             SkipReason::NeedsQuotes(k) => write!(
                 f,
@@ -437,11 +442,11 @@ fn parse_var(v: &Value) -> Result<Var, SkipReason> {
             for (k, val) in params.into_iter().flatten() {
                 match k.as_str() {
                     Some("format") => {
-                        format = Some(
-                            val.as_str()
-                                .ok_or(SkipReason::BadValue("params.format"))?
-                                .to_string(),
-                        );
+                        let f = val.as_str().ok_or(SkipReason::BadValue("params.format"))?;
+                        if date_format_types_tab(f) {
+                            return Err(SkipReason::DateFormatHasTab);
+                        }
+                        format = Some(f.to_string());
                     }
                     Some("offset") => {
                         offset = val.as_i64().ok_or(SkipReason::BadValue("params.offset"))?;
@@ -456,6 +461,16 @@ fn parse_var(v: &Value) -> Result<Var, SkipReason> {
         other => return Err(SkipReason::UnsupportedVarType(other.to_string())),
     };
     Ok(Var { name, kind })
+}
+
+/// Whether a strftime `format` would type a tab (D-15): a literal tab, or
+/// `%t` with any flags. Checked by formatting a fixed date, so the answer
+/// is chrono's own. An invalid format is reported when it is expanded.
+fn date_format_types_tab(format: &str) -> bool {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    let when = chrono::DateTime::UNIX_EPOCH.fixed_offset();
+    write!(out, "{}", when.format(format)).is_ok() && out.contains('\t')
 }
 
 #[cfg(test)]
@@ -743,6 +758,29 @@ matches:
         assert_eq!(l.skipped.len(), 1, "{:?}", l.skipped);
         assert_eq!(l.skipped[0].trigger.as_deref(), Some(":t1"));
         assert_eq!(l.skipped[0].reason, SkipReason::ReplaceHasTab);
+    }
+
+    #[test]
+    fn date_format_that_types_a_tab_skips_snippet() {
+        // D-15: tab is not allowed anywhere, so a date format that would type
+        // one (a literal tab or `%t`) skips the snippet. `%%t` is a literal
+        // `%t`, and `%n` is a line break, which is allowed. (Flagged forms
+        // such as `%-t` are invalid in chrono and fail at expansion.)
+        let src = "matches:\n  - trigger: \":d1\"\n    replace: \"{{d}}\"\n    vars:\n      - name: d\n        type: date\n        params: { format: \"%d\\t%m\" }\n  - trigger: \":d2\"\n    replace: \"{{d}}\"\n    vars:\n      - name: d\n        type: date\n        params: { format: \"%d%t%m\" }\n  - trigger: \":ok\"\n    replace: \"{{d}}\"\n    vars:\n      - name: d\n        type: date\n        params: { format: \"%d%%t%n%m\" }\n";
+        let l = parse(src);
+        assert_eq!(triggers(&l), [":ok"]);
+        let skipped: Vec<_> = l
+            .skipped
+            .iter()
+            .map(|s| (s.trigger.as_deref(), s.reason.clone()))
+            .collect();
+        assert_eq!(
+            skipped,
+            [
+                (Some(":d1"), SkipReason::DateFormatHasTab),
+                (Some(":d2"), SkipReason::DateFormatHasTab),
+            ]
+        );
     }
 
     #[test]
