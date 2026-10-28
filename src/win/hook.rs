@@ -163,7 +163,11 @@ fn translate(kb: &KBDLLHOOKSTRUCT, out: &mut impl FnMut(KeyInput)) {
         // Modifiers and locks on their own do nothing.
         VK_SHIFT | VK_LSHIFT | VK_RSHIFT | VK_CONTROL | VK_LCONTROL | VK_RCONTROL | VK_MENU
         | VK_LMENU | VK_RMENU | VK_CAPITAL | VK_NUMLOCK | VK_SCROLL => return,
-        VK_LWIN | VK_RWIN => return out(KeyInput::Reset),
+        VK_LWIN | VK_RWIN => {
+            // Drops a waiting surrogate half; this Reset covers it.
+            interrupt_packet(&mut |_| {});
+            return out(KeyInput::Reset);
+        }
         _ => {}
     }
     if vk != VK_PACKET {
