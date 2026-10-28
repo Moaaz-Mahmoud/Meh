@@ -65,3 +65,7 @@ Inputs: verification.md defects 1-19, the convention audit, D-15 and D-16. Verif
 Checks at 01363db: `cargo test --locked` 98 + 2 + 4 passed; `cargo clippy --all-targets -- -D warnings` clean; meh_typecheck `cargo check --lib` and `cargo clippy --lib -- -D warnings` clean; `cargo fmt --check` clean; Cargo.lock unchanged.
 
 Still Windows-only (first compiled in the next CI run): `app.rs` (OpenFolder thread, WatchFailed, EnabledChanged, APP_NAME) and `tray.rs` (APP_NAME). Needs a human Windows test: CapsLock case (#10), emoji panel trigger (#8), Ctrl+Alt shortcut reset vs AltGr text (#9), typing during the modifier wait (#4), Open config folder on a cold Explorer (#2).
+
+## CI dry run 2 (after fix round 1)
+- Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40729738115: **success**. The Version step now runs first, all steps pass, and Publish was skipped as expected for a manual run. Actions run on v7 with no Node 20 warning.
+- Artifact `meh-dist` is 2,332,402 bytes. This is the build the human tests at Gate 4.
