@@ -140,3 +140,6 @@ Note: someone committed this section's in-progress header as cac088e while this 
 | # | Observation | Status |
 |---|---|---|
 | G4-1 | After install, `meh.exe` was running, but `%APPDATA%\meh` did not exist for the signed-in user. `GetOwner` showed the process ran as `HCR-PF4923P5\eudadmin`; `whoami` was `unhcr\madany`. The exe was not in `%LOCALAPPDATA%\Programs\meh`, so setup had run elevated. The failure to create the folder was silent (`app.rs` discards the `ensure_sample` error). | FAIL, fixed per D-18 in fix round 3 |
+| G4-2 | The portable `meh.exe` in `%LOCALAPPDATA%` is blocked: "Windows cannot access the specified device, path, or file" (application control). | Environment constraint, handled per revised D-18 (portable not supported on this laptop) |
+| G4-3 | `C:\Program Files\meh\meh.exe` does not exist. The elevated per-user install went into the admin account's own profile. | FAIL, fixed per D-18 (setup defaults to all users) |
+| G4-4 | `meh-0.1.0-setup.exe` is blocked when run normally from Downloads. Only "Run as administrator" works. | Environment constraint, handled per revised D-18 |

@@ -148,3 +148,12 @@ The human said: "if it's there, keep it. if not, no need to add it".
   - "Start Meh now" is offered only in non-admin mode. In admin mode a final message says to start Meh from the Start Menu as yourself.
 - **App:** the wrong-account warning stays, now saying "start it from the Start Menu as yourself (not 'Run as administrator')".
 - **README:** managed laptops should use the installer and start Meh normally; the portable zip only works where application control allows running exes from your own folders.
+
+### D-18 revised again (21:02): Setup defaults to all users
+- **New fact:** a standard user can't even launch the installer from Downloads on the managed laptop (blocked by application control), so setup always runs as the separate admin account.
+- **Setup:** `PrivilegesRequired=admin` with `PrivilegesRequiredOverridesAllowed=dialog commandline`.
+  - By default it installs for all users: Program Files, the all-users Start Menu and the all-users Startup folder.
+  - "Install for me only" stays available for unmanaged PCs.
+  - If setup runs elevated but the user picks "me only", it warns before installing.
+- This supersedes D-09's "per-user only" (the autostart default stays ticked).
+- **Open risk:** if the IT policy also requires code-signed apps, meh is blocked even from Program Files. This can only be confirmed by the human.
