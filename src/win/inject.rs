@@ -24,7 +24,8 @@ static BUSY: AtomicBool = AtomicBool::new(false);
 /// True from the moment the worker sees a trigger until its replacement has
 /// been sent (rendering, the modifier wait and `SendInput`). Keys the user
 /// types meanwhile reach the app before our Backspaces, so the hook turns
-/// them into resets instead of buffering them (verifier defect 4).
+/// them into resets instead of buffering them (verifier defect 4). Keys
+/// queued before it was set are dropped by the worker (verifier N4).
 pub fn is_busy() -> bool {
     BUSY.load(Ordering::Acquire)
 }

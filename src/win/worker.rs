@@ -8,6 +8,7 @@ use crate::core::expand::{plan_injection, render};
 use crate::core::matcher::Matcher;
 use crate::core::problems::{Problem, Problems};
 use crate::core::reload::{Notice, Store, notice};
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -31,6 +32,9 @@ pub struct Worker {
     matcher: Matcher,
     problems: SharedProblems,
     ui: Box<dyn FnMut(UiUpdate) + Send>,
+    /// Non-key events taken off the channel while dropping stale keys after
+    /// an expansion; handled before the channel is read again.
+    deferred: VecDeque<Event>,
 }
 
 impl Worker {
@@ -47,15 +51,23 @@ impl Worker {
             matcher: Matcher::new(&[]),
             problems,
             ui,
+            deferred: VecDeque::new(),
         }
     }
 
     /// Handles events until `Quit` or until every sender is gone.
     pub fn run(mut self, rx: Receiver<Event>) {
         self.reload();
-        while let Ok(ev) = rx.recv() {
+        loop {
+            let ev = match self.deferred.pop_front() {
+                Some(ev) => ev,
+                None => match rx.recv() {
+                    Ok(ev) => ev,
+                    Err(_) => return,
+                },
+            };
             match ev {
-                Event::Key(k) => self.key(k),
+                Event::Key(k) => self.key(k, &rx),
                 Event::Reload => self.reload(),
                 // The hook's flag is the one source of truth; keys already
                 // queued are dropped in `key`, and the buffer starts fresh.
@@ -109,7 +121,7 @@ impl Worker {
         });
     }
 
-    fn key(&mut self, k: KeyInput) {
+    fn key(&mut self, k: KeyInput, rx: &Receiver<Event>) {
         if !hook::is_enabled() {
             return;
         }
@@ -120,14 +132,18 @@ impl Worker {
                 // Enter and Tab come as Reset from the hook; the matcher
                 // also treats '\t' / '\n' as reset-only (D-15).
                 if let Some(hit) = self.matcher.push_char(c) {
-                    self.expand(hit.idx, hit.erase, hit.retype);
+                    self.expand(hit.idx, hit.erase, hit.retype, rx);
                 }
             }
         }
     }
 
-    fn expand(&mut self, idx: usize, erase: usize, retype: Option<char>) {
+    fn expand(&mut self, idx: usize, erase: usize, retype: Option<char>, rx: &Receiver<Event>) {
+        // If nothing is typed, the trigger stays, ending in its separator
+        // for a word trigger.
+        let mut boundary = retype.is_some();
         let Some(snippet) = self.store.snippets().get(idx) else {
+            self.matcher.after_expansion(boundary);
             return;
         };
         // Until the keys are sent, the hook turns typed keys into resets.
@@ -138,6 +154,7 @@ impl Worker {
                 let keys = plan_injection(erase, &expansion, retype);
                 inject::wait_for_modifiers_released(inject::MODIFIER_WAIT);
                 inject::send(&keys);
+                boundary = expansion.boundary_before_caret(retype);
             }
             Err(e) => {
                 let tooltip = {
@@ -151,10 +168,24 @@ impl Worker {
                 });
             }
         }
+        // Drop every key already queued, still busy so that a key the hook
+        // sees meanwhile is a reset too. That includes keys typed after the
+        // trigger but before BUSY was set, which were queued as plain
+        // chars: they reached the app before the replacement, so they must
+        // not form a match with what comes next (verifier N4). The buffer
+        // ends up empty either way; the last dropped key decides whether
+        // its start is a word boundary, as if it had been handled: a reset
+        // (click, arrow, key typed while busy) makes it one, a char or
+        // Backspace leaves unknown text left of the caret (N7).
+        while let Ok(ev) = rx.try_recv() {
+            match ev {
+                Event::Key(KeyInput::Reset) => boundary = true,
+                Event::Key(KeyInput::Char(_) | KeyInput::Backspace) => boundary = false,
+                other => self.deferred.push_back(other),
+            }
+        }
         drop(busy);
-        // Whatever the user types next starts fresh. Keys typed while busy
-        // arrive as resets, so they cannot form a stale match.
-        self.matcher.reset();
+        self.matcher.after_expansion(boundary);
     }
 }
 

@@ -117,7 +117,7 @@ meh reads every key you type, so it is built to keep nothing:
 - Some editors with auto-indent or auto-close (code editors, for example) may shift multi-line text or the `$|$` cursor position.
 - Long replacements are typed key by key, so they take a moment and can be slow in heavy apps.
 - If you hold Shift, Ctrl or Alt when a trigger fires, meh waits up to half a second for you to let go before typing.
-- **Typing during an expansion.** Keys you press after a trigger fires but before meh has typed the replacement (for example during that half-second wait) reach the app first. meh then erases the wrong characters: some of what you just typed instead of the end of the trigger. meh never holds back or replays your keys; it only makes sure those keys cannot set off another trigger. Pause briefly after a trigger, especially one that ends in `?`, `!` or `:`, which need Shift.
+- **Typing during an expansion.** Keys you press after a trigger fires but before meh has typed the replacement (for example during that half-second wait) reach the app first. meh then erases the wrong characters: some of what you just typed instead of the end of the trigger. meh never holds back or replays your keys. It leaves them out of trigger matching (after the replacement, it starts from an empty buffer), so they do not set off another trigger. Pause briefly after a trigger, especially one that ends in `?`, `!` or `:`, which need Shift.
 
 ## Building
 
