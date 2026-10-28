@@ -134,10 +134,11 @@ pub fn match_dir(config_dir: &Path) -> PathBuf {
     config_dir.join("match")
 }
 
-/// True for a file name meh loads: `*.yml` / `*.yaml` (any case), not hidden.
-/// Editor backups such as `x.yml~` or `x.yml.swp` do not qualify.
+/// True for a file name meh loads: `*.yml` / `*.yaml` (any case). Hidden
+/// files and editor temp/lock files (`.x.yml.swp`, `x.yml~`, `#x.yml#`,
+/// `~$x.yml`, `.#x.yml`) do not qualify.
 pub fn is_match_file_name(name: &str) -> bool {
-    if name.starts_with('.') {
+    if name.starts_with(['.', '~', '#']) {
         return false;
     }
     match name.rsplit_once('.') {

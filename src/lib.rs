@@ -4,3 +4,4 @@
 //! lives in `win` (added in later steps).
 
 pub mod core;
+pub mod icon;
