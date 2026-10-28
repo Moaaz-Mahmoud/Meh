@@ -16,9 +16,9 @@ use windows_sys::Win32::UI::Shell::{
     Shell_NotifyIconW, ShellExecuteW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    DispatchMessageW, GetMessageW, KillTimer, MB_ICONERROR, MB_ICONINFORMATION, MB_ICONWARNING,
-    MB_OK, MB_SETFOREGROUND, MSG, MessageBoxW, PostQuitMessage, SW_SHOWNORMAL, SetTimer,
-    TranslateMessage, WM_TIMER,
+    DispatchMessageW, GetMessageW, IDYES, KillTimer, MB_ICONERROR, MB_ICONINFORMATION,
+    MB_ICONWARNING, MB_OK, MB_SETFOREGROUND, MB_YESNO, MSG, MessageBoxW, PostQuitMessage,
+    SW_SHOWNORMAL, SetTimer, TranslateMessage, WM_TIMER,
 };
 use windows_sys::core::GUID;
 
@@ -138,6 +138,22 @@ pub fn message_box(title: &str, text: &str, kind: BoxKind) {
             MB_OK | icon | MB_SETFOREGROUND,
         );
     }
+}
+
+/// A modal Yes/No warning box. Returns true for Yes. Closing the box
+/// counts as No.
+pub fn ask_yes_no(title: &str, text: &str) -> bool {
+    let (title, text) = (wide(title), wide(text));
+    // SAFETY: both strings are NUL-terminated and outlive the call.
+    let r = unsafe {
+        MessageBoxW(
+            null_mut(),
+            text.as_ptr(),
+            title.as_ptr(),
+            MB_YESNO | MB_ICONWARNING | MB_SETFOREGROUND,
+        )
+    };
+    r == IDYES
 }
 
 /// Opens `dir` in Explorer on a short-lived thread, and shows a warning box

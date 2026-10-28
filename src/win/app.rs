@@ -11,7 +11,7 @@ use crate::core::{APP_NAME, config};
 use crate::win::tray::{Action, Tray};
 use crate::win::ui::{self, BoxKind};
 use crate::win::worker::{self, SharedProblems, UiUpdate, Worker};
-use crate::win::{Event, hook, single_instance, watch};
+use crate::win::{Event, account, hook, single_instance, watch};
 use std::sync::mpsc;
 use std::thread;
 
@@ -22,6 +22,13 @@ pub fn run() {
     let Some(_instance) = single_instance::acquire() else {
         return;
     };
+
+    // Running as another account than the signed-in user (D-18): warn
+    // before creating that account's config folder. Yes quits; returning
+    // here releases the single-instance mutex.
+    if !account::check() {
+        return;
+    }
 
     let match_dir = config::config_dir().map(|d| config::match_dir(&d));
     // Never overwrites (D-05). A failure is listed under "Show problems…"

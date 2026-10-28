@@ -7,6 +7,7 @@
 
 use crate::core::problems::Problem;
 
+pub mod account;
 #[cfg(windows)]
 pub mod app;
 pub mod clipboard;
