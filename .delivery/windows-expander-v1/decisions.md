@@ -106,3 +106,8 @@ Ordered by impact. `<app>` = the app name from Q-02. Each recommended option fit
 - A. README note only in v1; no detection. (Recommended: UIPI failure is silent and any warning needs foreground-window integrity checks outside the cut.)
 - B. Tray tooltip warning when the foreground window is elevated. Consequence: clearer for users, but adds a polling timer and untestable Win32 code.
 - C. Offer "run as administrator" in the installer. Consequence: fixes admin apps but runs a global keyboard hook with full rights; not advised.
+
+### D-14 (18:56): CI frequency, clarified
+The human said: "Okay to compile and build occasionally, by low rate I meant not with every push. Just keep things balanced."
+- An occasional, deliberate build-only `workflow_dispatch` run is fine. For example: once after the Windows layer lands, and again after a batch of fixes. There is still no push or PR trigger.
+- To make `workflow_dispatch` available, **only** `.github/workflows/release.yml` goes onto `main` as a standalone commit (GitHub only offers manual runs for workflows on the default branch). All code still goes through the PR.
