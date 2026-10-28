@@ -69,3 +69,21 @@ Still Windows-only (first compiled in the next CI run): `app.rs` (OpenFolder thr
 ## CI dry run 2 (after fix round 1)
 - Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40729738115: **success**. The Version step now runs first, all steps pass, and Publish was skipped as expected for a manual run. Actions run on v7 with no Node 20 warning.
 - Artifact `meh-dist` is 2,332,402 bytes. This is the build the human tests at Gate 4.
+
+## Fix round 2
+Inputs: verification.md "## Re-verification after fix round 1", new defects N1-N8, under D-15. Nothing needed a decision outside D-xx.
+
+| Item | Source | Commit | Status |
+|---|---|---|---|
+| N1 | A tab is typed from a date `format` or a clipboard value | 176c30e | fixed. A date `format` that renders a tab (a literal tab or `%t`, checked by formatting a fixed date with chrono) skips the snippet with `DateFormatHasTab`. A tab in a variable value is typed as a space. `Key::Tab` was removed, so nothing can plan a Tab press. Tests: `date_format_that_types_a_tab_skips_snippet`, `tab_in_variable_value_becomes_space`, `plan_keys_never_types_tab` |
+| N2 | Triggers with VT, FF, NEL, other control chars or U+2028/U+2029 load silently | 6491bc5 | fixed. Such an entry is skipped on its own (`TriggerHasControlChar`, which replaces `TriggerHasTabOrNewline`) and shown escaped (`\u{85}`). Test: `trigger_with_any_control_or_line_separator_skips_only_that_entry` |
+| N3 | README says the load order matches Explorer's | d1b3a84 | fixed (docs only). The README now says files are sorted by name, ignoring case, in plain character order, so `10.yml` loads before `9.yml`. No natural sort |
+| N4 | Keys queued before BUSY enter the fresh buffer | 11ab3bc | fixed. After the expansion, while still busy, the worker drains the channel: key events are dropped, and other events are deferred and handled next. The README sentence was reworded to match. Windows-only, so it is type-checked but has no test |
+| N5 | `trigger: 123` reported with no trigger | 63049d1 | fixed. The problem names the value as YAML read it (`Skipped \`123\``). serde_norway's `Value` keeps no source positions, so it gives the file name but no line. Test: `unquoted_number_or_bool_text_is_skipped_with_quote_hint` |
+| N6 | The Win key leaves a pending surrogate half | 6cef00e | fixed (`interrupt_packet` runs before the Win-key Reset). Windows-only, type-checked |
+| N7 | A word trigger fires glued to a plain expansion | 0f8f4dc (core), 11ab3bc (worker) | fixed. New `Matcher::after_expansion(boundary)`, with the boundary from `Expansion::boundary_before_caret(retype)`: it is the char left of the caret, a separator or a line break, honoring `$\|$` and the re-typed separator. After a drained key, the last key decides: a reset makes the start a boundary, and a char or Backspace does not. After a failed expansion, the start is a boundary only if the trigger was a word trigger. Tests: `plain_hit_then_word_trigger_needs_a_boundary` (`:hibrb `), `word_hit_then_word_trigger_still_fires` (`brb brb `), `boundary_before_caret_after_expansion` |
+| N8 | A non-text entry in `triggers:` skips the whole snippet | 63049d1 | fixed. Each entry is checked on its own: a number or bool gets `NeedsQuotes`, and null or `~` counts as an empty trigger. Other errors in the snippet are still reported once. README updated. Test: `non_text_entry_in_triggers_skips_only_that_entry` |
+
+Checks at 63049d1: `cargo test --locked` 105 + 2 + 4 passed. `cargo clippy --all-targets -- -D warnings` is clean, and so are the meh_typecheck `cargo check --lib` and `cargo clippy --lib -- -D warnings`. `cargo fmt --check` is clean and Cargo.lock is unchanged. Each new core test was checked by reverting its fix in place: date format tab, value tab mapping, control-char check, hit default boundary and `after_expansion`. Every one failed without its fix.
+
+Still Windows-only: the worker drain (N4) and the hook Win-key path (N6). They are type-checked here and first compiled in the next CI run. app.rs and tray.rs are unchanged.
