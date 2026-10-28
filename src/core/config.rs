@@ -220,8 +220,9 @@ pub fn load_dir(dir: &Path) -> Result<Loaded, ConfigError> {
 
 #[derive(Deserialize)]
 struct RawFile {
+    /// Entries are checked one by one, so a bad entry skips only itself.
     #[serde(default)]
-    matches: Option<Vec<Mapping>>,
+    matches: Option<Vec<Value>>,
 }
 
 /// Parses one file's text and appends its snippets and skip warnings to
@@ -235,7 +236,7 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
     })?;
 
     let mut seen: HashSet<String> = loaded.snippets.iter().map(|s| s.trigger.clone()).collect();
-    for m in raw.matches.unwrap_or_default() {
+    for entry in raw.matches.unwrap_or_default() {
         let mut skip = |trigger: Option<String>, reason: SkipReason| {
             loaded.skipped.push(Skipped {
                 file: file.to_path_buf(),
@@ -243,7 +244,11 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
                 reason,
             })
         };
-        let parsed = match parse_match(&m) {
+        let Some(m) = entry.as_mapping() else {
+            skip(None, SkipReason::BadValue("matches"));
+            continue;
+        };
+        let parsed = match parse_match(m) {
             Ok(p) => p,
             Err((trigger, reason)) => {
                 skip(trigger, reason);
@@ -710,6 +715,28 @@ matches:
         assert_eq!(l.skipped.len(), 1, "{:?}", l.skipped);
         assert_eq!(l.skipped[0].trigger.as_deref(), Some(":t1"));
         assert_eq!(l.skipped[0].reason, SkipReason::ReplaceHasTab);
+    }
+
+    #[test]
+    fn non_mapping_match_entry_skips_only_that_entry() {
+        let l = parse(
+            r#"
+matches:
+  - trigger: ":a"
+    replace: "x"
+  - ":oops"
+  - [1, 2]
+  - 42
+  - trigger: ":b"
+    replace: "y"
+"#,
+        );
+        assert_eq!(triggers(&l), [":a", ":b"]);
+        assert_eq!(l.skipped.len(), 3, "{:?}", l.skipped);
+        for s in &l.skipped {
+            assert_eq!(s.reason, SkipReason::BadValue("matches"));
+            assert_eq!(s.trigger, None);
+        }
     }
 
     #[test]
