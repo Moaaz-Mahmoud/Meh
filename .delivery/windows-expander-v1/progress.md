@@ -90,3 +90,28 @@ Still Windows-only: the worker drain (N4) and the hook Win-key path (N6). They a
 
 ## CI dry run 3 (after fix round 2)
 - Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40735923798: **success**. All steps passed and Publish was skipped as expected. This is the Gate 4 test build.
+
+## Fix round 3
+Inputs: verification.md "Gate 4" (G4-1) and D-18, plus three spec changes from the orchestrator during the round. Application control on the human's laptop blocks exes outside Program Files, and setup runs only via "Run as administrator" with a separate admin account. So the installer now installs for all users by default, and the earlier plan (warn and recommend the portable zip) was dropped. decisions.md was not edited; the orchestrator is revising D-18.
+
+| Item | Commit | Status |
+|---|---|---|
+| 1. Config folder failure no longer silent | a4670bc | fixed. New standing `Problem::ConfigFolder { path: Option<PathBuf>, msg }`; `path: None` means `%APPDATA%` was not found. It survives reloads, is listed under "Show problems…" and notifies once. `Event::WatchFailed` became `Event::Standing(Problem)`, and new `reload::add_standing` / `standing_notice` handle it. Only the first standing problem notifies, so a watcher failure on the same missing folder does not replace the folder balloon. The worker no longer fakes a ConfigError for a missing `%APPDATA%`. Tests: `config_folder_problem_names_the_folder_and_survives_reloads`, `config_folder_problem_without_a_folder`, `standing_notices_name_the_problem`, `add_standing_notifies_only_for_the_first_new_one` |
+| 2. Wrong-account warning at startup | 31e7c3d | done. Pure `core::ident::{same_account, account_label, wrong_account_message}`: case-insensitive, and an empty user on either side never warns; domains are compared only when both are known. Win32 code is in `win::account` (token, then `LookupAccountSidW`, against `WTSQuerySessionInformationW` user and domain), plus `ui::ask_yes_no`. The check runs right after single-instance and before the config folder is created; Yes returns from `run()`, which releases the mutex. The message is reworded per the spec change ("start it from the Start Menu as yourself"). Added windows-sys feature `Win32_System_RemoteDesktop`. Tests: `same_account_ignores_case`, `same_account_never_warns_on_missing_data`, `account_label_joins_domain_and_user`, `wrong_account_message_names_both_accounts_and_the_folder` |
+| 3. Installer for managed laptops | 31da8d8 | done (spec as of addendum 2). `PrivilegesRequired=admin`, `PrivilegesRequiredOverridesAllowed=dialog commandline` and `UsePreviousPrivileges=no`. Autostart is now an `{autostartup}\Meh` [Icons] entry with `Tasks: autostart`, which the uninstaller removes; the [Registry] Run lines are gone. [InstallDelete] removes the shortcut when the task is unticked, and [Code] runs `RegDeleteValue` on an old HKCU Run `meh` value in the setup account's hive (best effort only: another user's hive is not reachable). "Start Meh now" has `runasoriginaluser` and `Check: not IsAdminInstallMode`. In admin mode, a finish MsgBox tells the user to start meh from the Start Menu as themselves. `InitializeSetup` warns when `IsAdmin and not IsAdminInstallMode` (Yes continues, No cancels, not shown in silent mode). `{autoprograms}` is confirmed: the all-users Start Menu in admin mode. Test: `installer_installs_for_all_users_and_autostarts_by_shortcut` (tests/repo_policy.rs). Not compiled here |
+| 4. README | acc888b | done. The Install section describes the all-users flow: start Meh from the Start Menu as yourself, use "me only" on personal PCs, and the portable zip works only where own-folder exes may run, with `shell:startup` for autostart. It also covers the unsigned-app caveat and the wrong-account warning. New Known limitations entries: managed laptops, and config folder failure |
+
+Checks at acc888b: `cargo fmt --check` is clean. `cargo test --locked` passed 113 + 2 + 5 tests. `cargo clippy --all-targets -- -D warnings` is clean, and so are the meh_typecheck `cargo check --lib` and `cargo clippy --lib -- -D warnings`. Cargo.lock is unchanged.
+
+Still Windows-only, first compiled in the next CI run:
+- `app.rs`: the folder problem is sent, then `account::check()` runs.
+- `win/account.rs`: the Win32 calls are type-checked only.
+- The ISCC compile of `installer/meh.iss` ([Code] Pascal).
+
+Needs a human Windows test:
+- An all-users install via "Run as administrator" with the admin account: Program Files, the common Start Menu and the common Startup shortcut, no auto-launch, and the finish message.
+- After signing in, meh runs as the signed-in user and creates their `%APPDATA%\meh`.
+- Starting meh as the admin account shows the warning, and Yes quits.
+- The "me only" plus elevated warning.
+- Uninstall removes the Startup shortcut.
+- Upgrading from the old per-user install in the admin account's profile: it stays installed side by side under its own HKCU uninstall entry, and must be uninstalled from that account.
