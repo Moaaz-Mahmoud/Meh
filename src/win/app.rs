@@ -106,18 +106,16 @@ pub fn run() {
                 Action::Reload => {
                     let _ = tx.send(Event::Reload);
                 }
-                Action::OpenFolder => {
-                    let opened = match_dir.as_deref().is_some_and(ui::open_folder);
-                    if !opened {
-                        ui::message_box(
-                            TITLE,
-                            "Could not open the config folder (%APPDATA%\\meh\\match).",
-                            BoxKind::Warning,
-                        );
-                    }
-                }
+                // Runs on its own thread: never block the hook thread.
+                Action::OpenFolder => ui::open_folder_in_background(
+                    match_dir.clone(),
+                    TITLE,
+                    "Could not open the config folder (%APPDATA%\\meh\\match).".to_string(),
+                ),
                 Action::ShowProblems => {
                     let report = worker::lock(&problems).report();
+                    // Modal, on this thread: fine for the hooks, see
+                    // `ui::message_box`.
                     ui::message_box("Meh - problems", &report, BoxKind::Info);
                 }
                 Action::Quit => ui::quit(),
