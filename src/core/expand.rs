@@ -8,7 +8,7 @@
 //! - Variables are evaluated only when the text uses them, at most once each.
 
 use crate::core::config::{Snippet, VarKind};
-use chrono::{DateTime, FixedOffset, TimeDelta};
+use chrono::{DateTime, Datelike, FixedOffset, TimeDelta};
 use std::collections::HashMap;
 use std::fmt::{self, Write as _};
 
@@ -117,8 +117,12 @@ impl Ctx<'_> {
         };
         let value = match &var.kind {
             VarKind::Date { format, offset } => {
+                // Years outside 0..=9999 are rejected for every format:
+                // `to_rfc2822` panics on them, and a 5-digit year is never
+                // what a snippet wants.
                 let when = TimeDelta::try_seconds(*offset)
                     .and_then(|d| self.now.checked_add_signed(d))
+                    .filter(|w| (0..=9999).contains(&w.year()))
                     .ok_or_else(|| ExpandError::DateOutOfRange {
                         var: var.name.clone(),
                     })?;
@@ -293,6 +297,25 @@ mod tests {
             render(&s, now(), &no_clip),
             Err(ExpandError::DateOutOfRange { var: "d".into() })
         );
+    }
+
+    #[test]
+    fn date_year_outside_0_to_9999_is_err_not_panic() {
+        // `to_rfc2822` panics outside years 0..=9999, so every format must
+        // reject such dates up front (verifier defect 1).
+        for offset in [400_000_000_000, -400_000_000_000, 8_000_000_000_000] {
+            for format in [None, Some("%Y"), Some("%d %B")] {
+                let s = snip("{{d}}", vec![date("d", format, offset)]);
+                assert_eq!(
+                    render(&s, now(), &no_clip),
+                    Err(ExpandError::DateOutOfRange { var: "d".into() }),
+                    "offset {offset}, format {format:?}"
+                );
+            }
+        }
+        // The edges still render.
+        let s = snip("{{d}}", vec![date("d", Some("%Y"), 0)]);
+        assert_eq!(text(&s), "2026");
     }
 
     #[test]
