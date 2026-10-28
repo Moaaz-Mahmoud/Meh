@@ -101,3 +101,71 @@ fn portable_zip_ships_the_license() {
     let run = zip["run"].as_str().expect("run");
     assert!(run.contains("LICENSE"), "{run}");
 }
+
+const INSTALLER: &str = include_str!("../installer/meh.iss");
+
+/// The `[Section]` each line of the Inno script is in, with comments and
+/// blank lines left out.
+fn iss_lines() -> Vec<(String, &'static str)> {
+    let mut section = String::new();
+    let mut out = Vec::new();
+    for line in INSTALLER.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with(';') || t.starts_with("//") {
+            continue;
+        }
+        if t.starts_with('[') && t.ends_with(']') {
+            section = t.trim_matches(['[', ']']).to_ascii_lowercase();
+            continue;
+        }
+        out.push((section.clone(), t));
+    }
+    out
+}
+
+/// D-09 as revised by D-18: setup installs for all users by default (the
+/// only path on PCs with application control), still offers "me only",
+/// and autostarts through a Startup shortcut, never a Run registry value.
+#[test]
+fn installer_installs_for_all_users_and_autostarts_by_shortcut() {
+    let setup: Vec<&str> = iss_lines()
+        .into_iter()
+        .filter(|(s, _)| s == "setup")
+        .map(|(_, l)| l)
+        .collect();
+    for want in [
+        "PrivilegesRequired=admin",
+        "AppMutex=meh-single-instance",
+        "DefaultDirName={autopf}\\meh",
+    ] {
+        assert!(setup.contains(&want), "missing {want}");
+    }
+    assert!(
+        setup
+            .iter()
+            .any(|l| l.starts_with("PrivilegesRequiredOverridesAllowed=") && l.contains("dialog")),
+        "{setup:?}"
+    );
+
+    let lines = iss_lines();
+    assert!(
+        lines.iter().any(|(s, l)| s == "icons"
+            && l.contains("{autostartup}\\Meh")
+            && l.contains("Tasks: autostart")),
+        "autostart shortcut"
+    );
+    assert!(lines.iter().all(|(s, _)| s != "registry"), "no [Registry]");
+    // The Run key may only be named by the [Code] cleanup of an old value.
+    for (s, l) in &lines {
+        if l.contains("CurrentVersion\\Run") {
+            assert!(s == "code" && l.contains("RegDeleteValue"), "{s}: {l}");
+        }
+    }
+    // Never start meh from an elevated, all-users setup: it would run as
+    // the admin account (D-18).
+    let run: Vec<_> = lines.iter().filter(|(s, _)| s == "run").collect();
+    assert!(!run.is_empty());
+    for (_, l) in run {
+        assert!(l.contains("Check: not IsAdminInstallMode"), "{l}");
+    }
+}
