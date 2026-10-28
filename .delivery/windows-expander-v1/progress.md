@@ -30,3 +30,9 @@
 - tray-icon 0.26.1's `set_tooltip` sends NIM_MODIFY without NIF_GUID; meh also sets the tooltip itself by GUID (`win::ui::set_tip`).
 - Worker logic lives in `src/win/worker.rs` and Win32 UI helpers in `src/win/ui.rs` (both `meh_typecheck`-gated) so most of the step-6 wiring is type-checked on Linux; only `tray.rs` and `app.rs` are `cfg(windows)`.
 - Not verifiable here (first compiled in CI): tray.rs, app.rs, build.rs Windows branch, meh.iss, release.yml runtime behavior.
+
+## CI dry run 1 (2026-10-28, workflow_dispatch on feat/v1-core, per D-14)
+- Run https://github.com/Moaaz-Mahmoud/Meh/actions/runs/40721103718: **success** in 1m34s.
+- Steps passed: toolchain, Test, Build, Version, Installer, Portable zip, Upload build. Publish release was **skipped**, as expected on a manual run.
+- Artifact `meh-dist` is 2,315,920 bytes. Its contents and the raw logs could not be fetched from the dev workspace (artifact storage host blocked by the proxy), so the human inspects it at Gate 4.
+- Annotation: `actions/checkout@v4` and `actions/upload-artifact@v4` target the deprecated Node 20 and are forced onto Node 24. Low priority; bump the majors later.
