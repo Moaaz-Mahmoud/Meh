@@ -173,7 +173,8 @@ pub enum Key {
     Unit(u16),
     /// Return key, for a line break (`\n`, `\r\n` or `\r`).
     Enter,
-    /// Tab key.
+    /// Tab key. Not reachable from config: a `replace` with a tab is not
+    /// loaded (D-15).
     Tab,
     /// Left arrow.
     Left,

@@ -83,8 +83,8 @@ Tabs are not allowed anywhere in a snippet, and line breaks are not allowed in a
 - **A `word: true` trigger waits for a separator** after it: a space or one of `, . ? ! ; :`. The trigger must also start a word, at the start of typing or right after a separator. `brb ` expands and keeps the space; `xbrb ` does not expand.
 - When two triggers match at once, the longer one wins. A trigger that is the start of another one (`:a` and `:ab`) fires first, so `:ab` can never be typed. Avoid such pairs.
 - **Tab and Enter never expand a trigger.** By the time meh sees them, the app has already moved to the next field or sent the message, so they only clear what meh has seen.
-- **Backspace** removes the last typed character, so fixing a typo inside a trigger still works.
-- These clear what meh has seen so far, because the cursor may have moved: a mouse click; arrow keys, Home, End, Page Up, Page Down, Esc, Enter and Tab; any Ctrl, Alt or Win shortcut; and dead keys (accent keys). Ctrl+Alt together counts as AltGr and types normally.
+- **Backspace** removes the last typed character, so fixing a typo inside a trigger still works. Backspace past the start of what meh has seen erases text meh never saw, so the next `word: true` trigger needs a separator before it.
+- These clear what meh has seen so far, because the cursor may have moved: a mouse click; arrow keys, Home, End, Page Up, Page Down, Esc, Enter and Tab; any Ctrl, Alt or Win shortcut (including a Ctrl+Alt combination that types nothing); and dead keys (accent keys). Ctrl+Alt together counts as AltGr and types normally when it produces a character. Emoji from the emoji panel (Win+.) are typed as one character.
 
 ## Live reload
 
