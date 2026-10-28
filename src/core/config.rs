@@ -280,6 +280,13 @@ pub fn parse_into(loaded: &mut Loaded, file: &Path, src: &str) -> Result<(), Con
             }
         };
         for trigger in parsed.triggers {
+            let trigger = match trigger {
+                Ok(t) => t,
+                Err((t, reason)) => {
+                    skip(t, reason);
+                    continue;
+                }
+            };
             if trigger.is_empty() {
                 skip(None, SkipReason::EmptyTrigger);
             } else if trigger.chars().any(is_untypeable_in_trigger) {
@@ -327,7 +334,8 @@ fn escape_controls(s: &str) -> String {
 }
 
 struct ParsedMatch {
-    triggers: Vec<String>,
+    /// One result per trigger entry: a bad entry skips only itself (D-15).
+    triggers: Vec<Result<String, SkipErr>>,
     replace: String,
     word: bool,
     vars: Vec<Var>,
@@ -343,7 +351,7 @@ fn get<'a>(m: &'a Mapping, key: &str) -> Option<&'a Value> {
 }
 
 /// Scalars (string, number, bool) as text. Used only where the exact text
-/// does not matter (variable names).
+/// does not matter (variable names, triggers named in a problem).
 fn scalar_str(v: &Value) -> Option<String> {
     match v {
         Value::String(s) => Some(s.clone()),
@@ -367,17 +375,31 @@ fn text_value(v: &Value, key: &'static str) -> Result<String, SkipReason> {
 
 type SkipErr = (Option<String>, SkipReason);
 
+/// A trigger as text for a problem: YAML's reading of an unquoted number
+/// or boolean (`123`, `true`) is close enough to find the entry. Empty is
+/// `None`, and line breaks are escaped.
+fn trigger_label(v: &Value) -> Option<String> {
+    scalar_str(v)
+        .filter(|t| !t.is_empty())
+        .map(|t| escape_controls(&t))
+}
+
+/// One `trigger` value or `triggers` entry. A null entry counts as empty.
+fn trigger_entry(v: &Value, key: &'static str) -> Result<String, SkipErr> {
+    if v.is_null() {
+        return Ok(String::new());
+    }
+    text_value(v, key).map_err(|reason| (trigger_label(v), reason))
+}
+
 fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
     // Best-effort trigger for reporting, before anything else can fail.
-    let first_trigger = get(m, "trigger").and_then(Value::as_str).or_else(|| {
+    let first_trigger = get(m, "trigger").and_then(trigger_label).or_else(|| {
         get(m, "triggers")
             .and_then(Value::as_sequence)
-            .and_then(|s| s.iter().find_map(Value::as_str))
+            .and_then(|s| s.iter().find_map(trigger_label))
     });
-    let fail = |reason: SkipReason| {
-        let trigger = first_trigger.filter(|t| !t.is_empty());
-        (trigger.map(escape_controls), reason)
-    };
+    let fail = |reason: SkipReason| (first_trigger.clone(), reason);
 
     for key in m.keys() {
         let Some(key) = key.as_str() else {
@@ -390,15 +412,13 @@ fn parse_match(m: &Mapping) -> Result<ParsedMatch, SkipErr> {
 
     let mut triggers = Vec::new();
     if let Some(t) = get(m, "trigger") {
-        triggers.push(text_value(t, "trigger").map_err(fail)?);
+        triggers.push(trigger_entry(t, "trigger"));
     }
     if let Some(ts) = get(m, "triggers") {
         let seq = ts
             .as_sequence()
             .ok_or_else(|| fail(SkipReason::BadValue("triggers")))?;
-        for t in seq {
-            triggers.push(text_value(t, "triggers").map_err(fail)?);
-        }
+        triggers.extend(seq.iter().map(|t| trigger_entry(t, "triggers")));
     }
     if triggers.is_empty() {
         return Err(fail(SkipReason::MissingTrigger));
@@ -850,11 +870,12 @@ matches:
     #[test]
     fn unquoted_number_or_bool_text_is_skipped_with_quote_hint() {
         // YAML would turn `1.10` into 1.1 and `1e3` into 1000.0, so such
-        // values are not guessed at: the user is asked to quote them.
+        // values are not guessed at: the user is asked to quote them. The
+        // problem shows the value as YAML read it, to find the entry.
         let l = parse(
             r#"
 matches:
-  - trigger: 1.10
+  - trigger: 123
     replace: "x"
   - trigger: ":n"
     replace: 1e3
@@ -864,26 +885,70 @@ matches:
     replace: "1e3"
   - trigger: "2.50"
     replace: "yes"
+  - trigger: 7
+    replace: "z"
+    regex: "x"
 "#,
         );
-        assert_eq!(triggers(&l), [":q", "2.50"]);
-        assert_eq!(l.snippets[0].replace, "1e3");
-        assert_eq!(l.snippets[1].replace, "yes");
-        let reasons: Vec<_> = l.skipped.iter().map(|s| s.reason.clone()).collect();
+        assert_eq!(triggers(&l), [":ok", ":q", "2.50"]);
+        assert_eq!(l.snippets[1].replace, "1e3");
+        assert_eq!(l.snippets[2].replace, "yes");
+        let skipped: Vec<_> = l
+            .skipped
+            .iter()
+            .map(|s| (s.trigger.as_deref(), s.reason.clone()))
+            .collect();
         assert_eq!(
-            reasons,
+            skipped,
             [
-                SkipReason::NeedsQuotes("trigger"),
-                SkipReason::NeedsQuotes("replace"),
-                SkipReason::NeedsQuotes("triggers"),
+                (Some("123"), SkipReason::NeedsQuotes("trigger")),
+                (Some(":n"), SkipReason::NeedsQuotes("replace")),
+                (Some("true"), SkipReason::NeedsQuotes("triggers")),
+                (Some("7"), SkipReason::UnsupportedKey("regex".into())),
             ]
         );
-        assert_eq!(l.skipped[1].trigger.as_deref(), Some(":n"));
         assert!(
             SkipReason::NeedsQuotes("replace")
                 .to_string()
                 .contains("quote this value")
         );
+    }
+
+    #[test]
+    fn non_text_entry_in_triggers_skips_only_that_entry() {
+        // Per entry, as for a tab or line break (D-15).
+        let l = parse(
+            r#"
+matches:
+  - triggers: [":a", 12, ~, ":b", [1], false, ":c"]
+    replace: "x"
+  - triggers: [12, ~]
+    replace: "y"
+"#,
+        );
+        assert_eq!(triggers(&l), [":a", ":b", ":c"]);
+        let skipped: Vec<_> = l
+            .skipped
+            .iter()
+            .map(|s| (s.trigger.as_deref(), s.reason.clone()))
+            .collect();
+        assert_eq!(
+            skipped,
+            [
+                (Some("12"), SkipReason::NeedsQuotes("triggers")),
+                (None, SkipReason::EmptyTrigger),
+                (None, SkipReason::BadValue("triggers")),
+                (Some("false"), SkipReason::NeedsQuotes("triggers")),
+                (Some("12"), SkipReason::NeedsQuotes("triggers")),
+                (None, SkipReason::EmptyTrigger),
+            ]
+        );
+        // A bad snippet is still reported once, not per trigger entry.
+        let l = parse("matches:\n  - triggers: [12, \":d\"]\n    replace: 5\n");
+        assert!(l.snippets.is_empty());
+        assert_eq!(l.skipped.len(), 1, "{:?}", l.skipped);
+        assert_eq!(l.skipped[0].trigger.as_deref(), Some("12"));
+        assert_eq!(l.skipped[0].reason, SkipReason::NeedsQuotes("replace"));
     }
 
     #[test]
